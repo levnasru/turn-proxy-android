@@ -1,4 +1,4 @@
-﻿package com.freeturn.app.service
+package com.freeturn.app.service
 
 import android.content.Context
 import android.os.Handler
@@ -40,6 +40,7 @@ class CoreProcessController(
     private val notifier: ProxyNotifier,
     private val carrierDns: () -> String,
     private val onStopRequested: () -> Unit,
+    private val protectPath: String? = null,
 ) {
     companion object {
         // Даём TURN-туннелю "устаканиться" перед поднятием WireGuard поверх него.
@@ -183,7 +184,7 @@ class CoreProcessController(
         } else {
             cmdArgs.add(executable)
             val carrierDnsValue = if (cfg.useCarrierDns) carrierDns() else null
-            cmdArgs.addAll(CoreArgs.client(cfg, srv, carrierDnsValue, prefs.ownClientId()))
+            cmdArgs.addAll(CoreArgs.client(cfg, srv, carrierDnsValue, prefs.ownClientId(), protectPath))
         }
 
         var exitCode = -1

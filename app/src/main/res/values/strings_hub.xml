@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hub_url_label">URL Хаба</string>
+    <string name="hub_url_placeholder">https://hub.example.com</string>
+    <string name="hub_pin_label">SPKI Pin (SHA-256)</string>
+    <string name="hub_pin_placeholder">base64...</string>
+    <string name="hub_token_label">Токен доступа (если требуется)</string>
+    <string name="hub_token_placeholder">Секретный токен</string>
+</resources>

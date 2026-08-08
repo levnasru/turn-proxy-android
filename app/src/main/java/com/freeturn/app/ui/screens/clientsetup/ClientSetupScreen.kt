@@ -103,6 +103,9 @@ fun ClientSetupScreen(
     var localPort    by remember(fieldsKey) { mutableStateOf(saved.localPort) }
     var magicTurn    by remember(fieldsKey) { mutableStateOf(saved.magicTurn) }
     var customDns    by remember(fieldsKey) { mutableStateOf(saved.customDns) }
+    var hubUrl       by remember(fieldsKey) { mutableStateOf(saved.hubUrl) }
+    var hubPin       by remember(fieldsKey) { mutableStateOf(saved.hubPin) }
+    var hubToken     by remember(fieldsKey) { mutableStateOf(saved.hubToken) }
 
     // Поля живут своей жизнью с момента первой правки. До этого догоняем DataStore:
     // clientConfig стартует с дефолта и реальный конфиг приезжает уже после композиции.
@@ -116,6 +119,9 @@ fun ClientSetupScreen(
         localPort = saved.localPort
         magicTurn = saved.magicTurn
         customDns = saved.customDns
+        hubUrl = saved.hubUrl
+        hubPin = saved.hubPin
+        hubToken = saved.hubToken
     }
 
     // Автозаполнение адреса сервера из SSH-конфига если поле пустое
@@ -129,7 +135,7 @@ fun ClientSetupScreen(
 
     // Авто-сохранение с дебаунсом 600 мс.
     LaunchedEffect(
-        fieldsKey, serverAddress, vkLink, threads, streamsPerCred, localPort, magicTurn, customDns
+        fieldsKey, serverAddress, vkLink, threads, streamsPerCred, localPort, magicTurn, customDns, hubUrl, hubPin, hubToken
     ) {
         if (!fieldsDirty) return@LaunchedEffect
         delay(600)
@@ -141,7 +147,10 @@ fun ClientSetupScreen(
                 streamsPerCred = streamsPerCred.roundToInt(),
                 localPort     = localPort.trim(),
                 magicTurn     = magicTurn.trim(),
-                customDns     = customDns.trim()
+                customDns     = customDns.trim(),
+                hubUrl        = hubUrl.trim(),
+                hubPin        = hubPin.trim(),
+                hubToken      = hubToken.trim()
             )
         }
     }
@@ -208,6 +217,20 @@ fun ClientSetupScreen(
                         onLocalPort = { localPort = it; fieldsDirty = true },
                         privacyMode = privacyMode
                     )
+
+                    if (saved.provider == Provider.HUB) {
+                        SectionLabel("Настройки Хаба") // TODO: move to string resource
+                        HubCard(
+                            hubUrl = hubUrl,
+                            onHubUrl = { hubUrl = it; fieldsDirty = true },
+                            hubPin = hubPin,
+                            onHubPin = { hubPin = it; fieldsDirty = true },
+                            hubToken = hubToken,
+                            onHubToken = { hubToken = it; fieldsDirty = true },
+                            privacyMode = privacyMode
+                        )
+                    }
+
 
                     PerformanceCard(
                         threads = threads,

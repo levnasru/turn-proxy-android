@@ -14,6 +14,7 @@ CoreArgs {
         srv: ServerOpts,
         carrierDns: String? = null,
         ownClientId: String? = null,
+        protectPath: String? = null,
     ): List<String> = buildList {
         add("-peer"); add(cfg.serverAddress)
         add("-provider"); add(cfg.provider)
@@ -59,6 +60,7 @@ CoreArgs {
         }
         val clientId = cfg.clientId.ifBlank { ownClientId.orEmpty() }
         if (clientId.isNotBlank()) { add("-client-id"); add(clientId) }
+        if (!protectPath.isNullOrBlank()) { add("-protect-path"); add(protectPath) }
     }
 
     /** Кеш кредов по умолчанию: относительный путь = CWD ядра (filesDir приложения). */

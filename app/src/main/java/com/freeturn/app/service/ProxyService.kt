@@ -18,9 +18,9 @@ import kotlinx.coroutines.cancel
 import org.koin.android.ext.android.inject
 
 /**
- * Foreground-сервис локального прокси (FGS-тип specialUse).
  * Делегирует логику [CoreProcessController], [ProxyNotifier], [NetworkHandoverMonitor].
  */
+import com.freeturn.app.domain.proxy.UnixSocketProtector
 class ProxyService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -30,6 +30,7 @@ class ProxyService : Service() {
     private lateinit var networkMonitor: NetworkHandoverMonitor
     private lateinit var controller: CoreProcessController
     private lateinit var speedMonitor: SpeedMonitor
+    private lateinit var socketProtector: UnixSocketProtector
 
     private val prefs: AppPreferences by inject()
 
@@ -50,12 +51,14 @@ class ProxyService : Service() {
             notifier = notifier,
             carrierDns = { networkMonitor.activeDnsServers() },
             onStopRequested = { stopSelf() },
+            protectPath = "@freeturn_protect",
         )
         speedMonitor = SpeedMonitor(
             scope = serviceScope,
             isStopped = { controller.isUserStopped },
             onSpeed = { notifier.setSpeed(it) },
         )
+        socketProtector = UnixSocketProtector(applicationContext)
         // Socks5Server не поднимаем: свой пакет всегда в ExcludedApplications, исходящие
         // сокеты сервера идут мимо туннеля - клиенты хотспота получали бы прямой канал.
     }
@@ -99,6 +102,7 @@ class ProxyService : Service() {
         acquireWakeLock()
         networkMonitor.register()
         ProxyServiceState.addLog("Запуск прокси")
+        socketProtector.start("@freeturn_protect")
         speedMonitor.start()
         controller.start()
 
@@ -125,6 +129,7 @@ class ProxyService : Service() {
         notifier.cancelCaptcha()
         ProxyServiceState.addLog("Остановка")
         controller.destroyProcessAndTunnel()
+        socketProtector.stop()
         serviceScope.cancel()
         if (wakeLock?.isHeld == true) wakeLock?.release()
     }
