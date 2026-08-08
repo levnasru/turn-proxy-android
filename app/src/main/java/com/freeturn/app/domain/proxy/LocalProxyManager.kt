@@ -110,6 +110,10 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
 
     suspend fun startProxy(cfg: ClientConfig) {
         if (ProxyServiceState.isRunning.value) return
+        // isRunning гаснет в начале onDestroy - раньше, чем ядро реально отдаёт TURN-аллокации
+        // (SIGTERM + до 6с graceful stop, см. CoreProcessController). Без этой паузы быстрый
+        // toggle стартует новый процесс поверх ещё не освобождённых аллокаций предыдущего.
+        withTimeoutOrNull(10_000) { ProxyServiceState.teardownComplete.first { it } }
         if (_proxyState.value is ProxyState.Error) _proxyState.value = ProxyState.Idle
 
         if (!cfg.isRawMode && cfg.serverAddress.isBlank()) {
