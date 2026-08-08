@@ -1,4 +1,4 @@
-﻿package com.freeturn.app.domain.proxy
+package com.freeturn.app.domain.proxy
 
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.domain.ConnectionStats
@@ -168,7 +168,12 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
             }
             is StartupResult.Failed -> {
                 stopProxy()
-                setErrorWithAutoReset(result.message)
+                val msg = if (result.message.contains("hub_fetch_failed")) {
+                    "Ошибка: Хаб недоступен. Отключитесь от WiFi/мобильной сети оператора (если он блокирует хаб) для первого запуска, или вставьте кэш вручную."
+                } else {
+                    result.message
+                }
+                setErrorWithAutoReset(msg)
             }
             is StartupResult.Success -> {
                 val s = ProxyServiceState.connectionStats.value

@@ -11,6 +11,13 @@ import com.freeturn.app.ui.components.SettingsFieldSlot
 import com.freeturn.app.ui.components.SettingsRowDivider
 import com.freeturn.app.ui.util.redact
 
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.unit.dp
+
 @Composable
 internal fun HubCard(
     hubUrl: String,
@@ -19,7 +26,8 @@ internal fun HubCard(
     onHubPin: (String) -> Unit,
     hubToken: String,
     onHubToken: (String) -> Unit,
-    privacyMode: Boolean
+    privacyMode: Boolean,
+    onInjectCache: () -> Unit = {}
 ) {
     SettingsCard {
         SettingsFieldSlot {
@@ -56,6 +64,13 @@ internal fun HubCard(
                 readOnly = privacyMode,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
+        }
+        SettingsRowDivider()
+        TextButton(
+            onClick = onInjectCache,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text("Вставить кэш вручную (Auto-cred Fallback)")
         }
     }
 }

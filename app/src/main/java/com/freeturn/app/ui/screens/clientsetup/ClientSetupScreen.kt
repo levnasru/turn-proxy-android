@@ -22,6 +22,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -106,6 +109,9 @@ fun ClientSetupScreen(
     var hubUrl       by remember(fieldsKey) { mutableStateOf(saved.hubUrl) }
     var hubPin       by remember(fieldsKey) { mutableStateOf(saved.hubPin) }
     var hubToken     by remember(fieldsKey) { mutableStateOf(saved.hubToken) }
+    
+    var showInjectDialog by remember { mutableStateOf(false) }
+    var cacheJson by remember { mutableStateOf("") }
 
     // Поля живут своей жизнью с момента первой правки. До этого догоняем DataStore:
     // clientConfig стартует с дефолта и реальный конфиг приезжает уже после композиции.
@@ -227,7 +233,8 @@ fun ClientSetupScreen(
                             onHubPin = { hubPin = it; fieldsDirty = true },
                             hubToken = hubToken,
                             onHubToken = { hubToken = it; fieldsDirty = true },
-                            privacyMode = privacyMode
+                            privacyMode = privacyMode,
+                            onInjectCache = { showInjectDialog = true }
                         )
                     }
 
@@ -279,6 +286,39 @@ fun ClientSetupScreen(
 
                 Spacer(Modifier.height(24.dp))
             }
+        }
+        
+        if (showInjectDialog) {
+            AlertDialog(
+                onDismissRequest = { showInjectDialog = false },
+                title = { Text("Вставить кэш хаба") },
+                text = {
+                    OutlinedTextField(
+                        value = cacheJson,
+                        onValueChange = { cacheJson = it },
+                        label = { Text("JSON кэш") },
+                        modifier = Modifier.fillMaxWidth().height(200.dp)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        try {
+                            java.io.File(context.filesDir, "hubcreds-cache.json").writeText(cacheJson)
+                            android.widget.Toast.makeText(context, "Кэш сохранён", android.widget.Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Ошибка", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                        showInjectDialog = false
+                    }) {
+                        Text("Сохранить")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showInjectDialog = false }) {
+                        Text("Отмена")
+                    }
+                }
+            )
         }
     }
 }
