@@ -68,6 +68,8 @@
     <string name="import_confirm">Импортировать</string>
     <string name="import_success_title">Сервер добавлен</string>
     <string name="import_success_desc">Настройка завершена. Запустите подключение на главном экране.</string>
+    <string name="raw_mode_title">Подключение задано конфигом</string>
+    <string name="raw_mode_desc">Профиль импортирован готовым файлом — все параметры внутри него. Настраивать вручную ничего не нужно, просто запустите подключение на главном экране.</string>
     <string name="import_success_go_home">К подключению</string>
     <string name="import_error_title">Ошибка импорта</string>
     <string name="import_error_desc">Некорректная ссылка или неподдерживаемая версия приложения.</string>
@@ -347,6 +349,8 @@
     <string name="notif_proxy_status_format">Потоки: %1$d/%2$d • %3$s</string>
     <string name="tile_service_label">Free Turn</string>
     <string name="proxy_active_wireguard">Прокси и WireGuard активны</string>
+    <string name="wg_button_on">WireGuard включён</string>
+    <string name="wg_button_off">WireGuard выключен</string>
 
     <!-- Виджет домашнего экрана -->
     <string name="widget_label">FreeTurn - прокси</string>

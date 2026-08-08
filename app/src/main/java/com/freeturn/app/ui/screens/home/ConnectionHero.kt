@@ -18,11 +18,13 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
@@ -71,7 +73,10 @@ internal fun ConnectionHero(
     state: ProxyState,
     uptimeText: String?,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    wireGuardConfigured: Boolean = false,
+    wireGuardUp: Boolean = false,
+    onToggleWireGuard: (Boolean) -> Unit = {}
 ) {
     val kind = state.heroKind()
     val reducedMotion = LocalReducedMotion.current
@@ -93,6 +98,59 @@ internal fun ConnectionHero(
         Spacer(Modifier.height(10.dp))
 
         StatsPill(state = state, kind = kind, uptimeText = uptimeText)
+
+        // Кнопка WG отдельно: гасится и поднимается без пересоздания TURN-сессии.
+        if (wireGuardConfigured) {
+            Spacer(Modifier.height(8.dp))
+            WireGuardButton(
+                up = wireGuardUp,
+                enabled = kind == HeroKind.Running || kind == HeroKind.Busy,
+                onClick = { onToggleWireGuard(!wireGuardUp) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun WireGuardButton(up: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val extended = MaterialTheme.extendedColorScheme
+    val label = stringResource(if (up) R.string.wg_button_on else R.string.wg_button_off)
+    val container by animateColorAsState(
+        targetValue = when {
+            !enabled -> MaterialTheme.colorScheme.surfaceContainerHigh
+            up -> extended.successContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+        animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
+        label = "wg_bg"
+    )
+    val content by animateColorAsState(
+        targetValue = when {
+            !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            up -> extended.onSuccessContainer
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = MaterialTheme.motionScheme.slowEffectsSpec(),
+        label = "wg_fg"
+    )
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = container,
+        modifier = Modifier.semantics { contentDescription = label }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+        ) {
+            Icon(
+                painterResource(R.drawable.vpn_key_24px), null,
+                Modifier.size(18.dp), tint = content
+            )
+            Spacer(Modifier.width(Spacing.sm))
+            Text(text = label, style = MaterialTheme.typography.labelLarge, color = content)
+        }
     }
 }
 

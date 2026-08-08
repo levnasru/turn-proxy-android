@@ -44,6 +44,8 @@ class CoreProcessController(
     companion object {
         // Даём TURN-туннелю "устаканиться" перед поднятием WireGuard поверх него.
         private const val WIREGUARD_START_DELAY_MS = 2_000L
+        // Ядро на SIGTERM закрывает стримы и ждёт до 5 с (cmd/client/main.go). Даём чуть больше.
+        private const val GRACEFUL_STOP_TIMEOUT_MS = 6_000L
     }
 
     private val wireGuard = WireGuardTunnelManager(context)
@@ -51,6 +53,10 @@ class CoreProcessController(
 
     private val process = AtomicReference<Process?>(null)
     private val userStopped = AtomicBoolean(false)
+    // Намерение пользователя по WG в этой сессии. WG расцеплен с ядром: его можно
+    // погасить и поднять кнопкой, не пересоздавая TURN-сессию (та стоит ~10 минут
+    // остывания аллокаций). По умолчанию поднимаем сразу после подключения.
+    private val wgWanted = AtomicBoolean(true)
     private val sessionKillScheduled = AtomicBoolean(false)
     private val restartCount = AtomicInteger(0)
     // Single-flight: двойной старт (tile+UI/watchdog) затёр бы первый процесс -> зомби.
@@ -62,7 +68,46 @@ class CoreProcessController(
     fun start() {
         userStopped.set(false)
         restartCount.set(0)
+        wgWanted.set(true)
         scope.launch { startBinaryProcess() }
+    }
+
+    /**
+     * Кнопка WG. Гасит/поднимает туннель поверх уже работающего ядра - смена
+     * внешнего VPN больше не стоит пересоздания TURN-сессии.
+     */
+    fun setWireGuardEnabled(enabled: Boolean) {
+        wgWanted.set(enabled)
+        scope.launch {
+            if (enabled) {
+                if (process.get() == null) {
+                    ProxyServiceState.addLog("WireGuard: туннель не запущен, включать нечего")
+                    return@launch
+                }
+                startWireGuard(prefs.clientConfigFlow.first())
+            } else {
+                wireGuard.stop()
+                ProxyServiceState.setWireGuardUp(false)
+                notifier.setStatus(context.getString(R.string.proxy_active))
+            }
+        }
+    }
+
+    /** Поднять WG под текущий конфиг. Ошибку логируем, ядро не роняем. */
+    private suspend fun startWireGuard(cfg: com.freeturn.app.data.config.ClientConfig): Boolean {
+        if (!cfg.wireGuardActive || !wgWanted.get()) return false
+        return try {
+            wireGuard.startAfterProxyReady(cfg)
+            ProxyServiceState.setWireGuardUp(true)
+            notifier.setStatus(context.getString(R.string.proxy_active_wireguard))
+            true
+        } catch (e: Exception) {
+            val message = e.message ?: e.javaClass.simpleName
+            ProxyServiceState.addLog("WireGuard: ошибка запуска - $message")
+            ProxyServiceState.setWireGuardUp(false)
+            notifier.setStatus(context.getString(R.string.notif_proxy_wireguard_error))
+            false
+        }
     }
 
     fun onNetworkHandover() {
@@ -79,10 +124,14 @@ class CoreProcessController(
     }
 
     fun destroyProcessAndTunnel() {
-        process.get()?.destroyCompat()
+        val proc = process.get()
         val wg = wireGuard
         Thread {
             try {
+                // SIGTERM, не SIGKILL: ядро успевает отдать TURN-аллокации релею
+                // (Refresh lifetime=0), иначе они висят весь TTL и следующий старт
+                // упирается в квоту.
+                proc?.stopGracefully(GRACEFUL_STOP_TIMEOUT_MS)
                 runBlocking { wg.stop() }
             } finally {
                 ProxyServiceState.markTeardownComplete()
@@ -141,7 +190,6 @@ class CoreProcessController(
         val startedAt = System.currentTimeMillis()
         var startupEmitted = false
         var startupFailed = false
-        var wireGuardStarted = false
         var captchaSessionCounter = 0L
 
         val tracker = CoreConnectionTracker(
@@ -223,36 +271,24 @@ class CoreProcessController(
                                 startupEmitted = true
                             }
                             hasConnection -> {
-                                try {
-                                    if (cfg.wireGuardActive) {
+                                // Туннель поднят - это и есть успех старта. WG идёт следом
+                                // и отдельно: его провал больше не роняет ядро (иначе одна
+                                // кривая WG-настройка стоила бы 10 минут остывания квоты).
+                                ProxyServiceState.setStartupResult(StartupResult.Success)
+                                ProxyServiceState.markConnectedIfAbsent(SystemClock.elapsedRealtime())
+                                notifier.setStatus(context.getString(R.string.proxy_active))
+                                if (cfg.wireGuardActive && wgWanted.get()) {
+                                    ProxyServiceState.addLog(
+                                        "WireGuard: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
+                                    )
+                                    delay(WIREGUARD_START_DELAY_MS)
+                                    if (userStopped.get() || process.get() !== proc) {
                                         ProxyServiceState.addLog(
-                                            "WireGuard: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
+                                            "WireGuard: старт отменён, прокси останавливается"
                                         )
-                                        delay(WIREGUARD_START_DELAY_MS)
-                                        if (userStopped.get() || process.get() !== proc) {
-                                            ProxyServiceState.addLog(
-                                                "WireGuard: старт отменён, прокси останавливается"
-                                            )
-                                            break
-                                        }
+                                        break
                                     }
-                                    wireGuard.startAfterProxyReady(cfg)
-                                    wireGuardStarted = cfg.wireGuardActive
-                                    ProxyServiceState.setStartupResult(StartupResult.Success)
-                                    ProxyServiceState.markConnectedIfAbsent(SystemClock.elapsedRealtime())
-                                    notifier.setStatus(
-                                        if (wireGuardStarted) context.getString(R.string.proxy_active_wireguard)
-                                        else context.getString(R.string.proxy_active)
-                                    )
-                                } catch (e: Exception) {
-                                    val message = e.message ?: e.javaClass.simpleName
-                                    ProxyServiceState.addLog("WireGuard: ошибка запуска - $message")
-                                    ProxyServiceState.setStartupResult(
-                                        StartupResult.Failed("WireGuard не запустился: $message")
-                                    )
-                                    notifier.setStatus(context.getString(R.string.notif_proxy_wireguard_error))
-                                    startupFailed = true
-                                    proc.destroyCompat()
+                                    startWireGuard(cfg)
                                 }
                                 startupEmitted = true
                             }
@@ -302,7 +338,12 @@ class CoreProcessController(
         } finally {
             ProxyServiceState.setCaptchaSession(null)
             notifier.cancelCaptcha()
-            if (wireGuardStarted) wireGuard.stop()
+            // Читаем состояние, а не локальный флаг: WG могли поднять кнопкой уже
+            // после старта сессии.
+            if (ProxyServiceState.wireGuardUp.value) {
+                wireGuard.stop()
+                ProxyServiceState.setWireGuardUp(false)
+            }
             ProxyServiceState.setConnectionStats(ConnectionStats.IDLE)
             process.set(null)
             when {

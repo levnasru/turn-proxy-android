@@ -61,6 +61,19 @@ class ProxyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Кнопка WG: сервис уже поднят и в foreground, ядро не трогаем.
+        if (intent?.action == ProxyActions.SET_WIREGUARD) {
+            if (!ProxyServiceState.isRunning.value) {
+                // Сервис не поднят: startForeground не вызывался, держать его нельзя.
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            controller.setWireGuardEnabled(
+                intent.getBooleanExtra(ProxyActions.EXTRA_WG_ENABLED, true)
+            )
+            return START_STICKY
+        }
+
         // ВАЖНО: startForeground вызываем первым для избежания ForegroundServiceDidNotStartInTimeException.
         notifier.prepareConnecting()
         // try/catch для обхода ForegroundServiceStartNotAllowedException и InvalidForegroundServiceTypeException.

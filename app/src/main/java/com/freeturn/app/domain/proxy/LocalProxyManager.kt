@@ -112,8 +112,19 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
         if (ProxyServiceState.isRunning.value) return
         if (_proxyState.value is ProxyState.Error) _proxyState.value = ProxyState.Idle
 
-        if (!cfg.isRawMode && (cfg.serverAddress.isBlank() || cfg.vkLink.isBlank())) {
+        if (!cfg.isRawMode && cfg.serverAddress.isBlank()) {
             setErrorWithAutoReset("Не заполнены настройки клиента")
+            return
+        }
+        if (!cfg.isRawMode && !cfg.hubMode && cfg.vkLink.isBlank()) {
+            setErrorWithAutoReset("Не заполнены настройки клиента")
+            return
+        }
+        // Ядро без этих трёх флагов просто откажется стартовать (config.go).
+        if (!cfg.isRawMode && cfg.hubMode &&
+            (cfg.hubUrl.isBlank() || cfg.hubPin.isBlank() || cfg.hubToken.isBlank())
+        ) {
+            setErrorWithAutoReset("Не заполнены настройки хаба: URL, pin и токен")
             return
         }
         if (cfg.isRawMode && cfg.rawCommand.isBlank()) {
@@ -178,6 +189,15 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
             ProxyServiceState.isRunning.first { !it }
             ProxyServiceState.teardownComplete.first { it }
         }
+    }
+
+    /** Кнопка WG. Ядро не трогаем - переключение внешнего VPN не стоит рестарта сессии. */
+    fun setWireGuard(enabled: Boolean) {
+        if (!ProxyServiceState.isRunning.value) {
+            if (enabled) setErrorWithAutoReset("Сначала поднимите туннель")
+            return
+        }
+        launcher.setWireGuard(enabled)
     }
 
     fun dismissCaptcha() {

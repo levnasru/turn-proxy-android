@@ -20,4 +20,14 @@ class AndroidProxyServiceLauncher(private val context: Context) : ProxyServiceLa
     override fun stop() {
         context.stopService(Intent(context, ProxyService::class.java))
     }
+
+    override fun setWireGuard(enabled: Boolean) {
+        // startService, а не startForegroundService: сервис уже в foreground, а из
+        // фона startForegroundService на живой сервис даёт ANR-таймер без нужды.
+        val intent = Intent(context, ProxyService::class.java).apply {
+            action = ProxyActions.SET_WIREGUARD
+            putExtra(ProxyActions.EXTRA_WG_ENABLED, enabled)
+        }
+        context.startService(intent)
+    }
 }

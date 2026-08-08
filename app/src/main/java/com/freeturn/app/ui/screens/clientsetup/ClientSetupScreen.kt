@@ -43,7 +43,11 @@ import com.freeturn.app.R
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.Provider
 import com.freeturn.app.data.HapticUtil
+import com.freeturn.app.ui.components.SectionLabel
+import com.freeturn.app.ui.components.SettingsCard
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
+import com.freeturn.app.ui.components.SettingsControlLabel
+import com.freeturn.app.ui.components.SettingsFieldSlot
 import com.freeturn.app.ui.theme.Spacing
 import com.freeturn.app.viewmodel.server.ServerViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
@@ -179,60 +183,76 @@ fun ClientSetupScreen(
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalArrangement = Arrangement.spacedBy(Spacing.lg)
             ) {
-                ConnectionCard(
-                    serverAddress = serverAddress,
-                    onServerAddress = { serverAddress = it; fieldsDirty = true },
-                    showVkLink = saved.provider == Provider.VK,
-                    vkLink = vkLink,
-                    onVkLink = { vkLink = it; fieldsDirty = true },
-                    localPort = localPort,
-                    onLocalPort = { localPort = it; fieldsDirty = true },
-                    privacyMode = privacyMode
-                )
+                // Raw-режим: подключение целиком задано импортированным конфигом
+                // (rawCommand перекрывает все поля ниже). Показывать их = мусорные
+                // мёртвые контролы, которые ничего не меняют и путают. Прячем всё,
+                // оставляя одну поясняющую карточку.
+                if (saved.isRawMode) {
+                    SectionLabel(stringResource(R.string.provider_connection_settings))
+                    SettingsCard {
+                        SettingsFieldSlot {
+                            SettingsControlLabel(
+                                title = stringResource(R.string.raw_mode_title),
+                                desc = stringResource(R.string.raw_mode_desc)
+                            )
+                        }
+                    }
+                } else {
+                    ConnectionCard(
+                        serverAddress = serverAddress,
+                        onServerAddress = { serverAddress = it; fieldsDirty = true },
+                        showVkLink = saved.provider == Provider.VK,
+                        vkLink = vkLink,
+                        onVkLink = { vkLink = it; fieldsDirty = true },
+                        localPort = localPort,
+                        onLocalPort = { localPort = it; fieldsDirty = true },
+                        privacyMode = privacyMode
+                    )
 
-                PerformanceCard(
-                    threads = threads,
-                    // потоки-на-аккаунт не могут превышать общее число потоков
-                    onThreads = {
-                        threads = it
-                        if (streamsPerCred > it) streamsPerCred = it
-                        fieldsDirty = true
-                    },
-                    streamsPerCred = streamsPerCred,
-                    onStreamsPerCred = { streamsPerCred = it.coerceAtMost(threads); fieldsDirty = true },
-                    onTick = { HapticUtil.perform(context, HapticUtil.Pattern.SELECTION) }
-                )
+                    PerformanceCard(
+                        threads = threads,
+                        // потоки-на-аккаунт не могут превышать общее число потоков
+                        onThreads = {
+                            threads = it
+                            if (streamsPerCred > it) streamsPerCred = it
+                            fieldsDirty = true
+                        },
+                        streamsPerCred = streamsPerCred,
+                        onStreamsPerCred = { streamsPerCred = it.coerceAtMost(threads); fieldsDirty = true },
+                        onTick = { HapticUtil.perform(context, HapticUtil.Pattern.SELECTION) }
+                    )
 
-                DnsCard(
-                    dnsMode = saved.dnsMode,
-                    onDnsMode = { mode ->
-                        HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
-                        clientEdit { it.copy(dnsMode = mode) }
-                    },
-                    customDns = customDns,
-                    onCustomDns = { customDns = it; fieldsDirty = true },
-                    useCarrierDns = saved.useCarrierDns,
-                    onUseCarrierDns = { v -> clientEdit { it.copy(useCarrierDns = v) } }
-                )
+                    DnsCard(
+                        dnsMode = saved.dnsMode,
+                        onDnsMode = { mode ->
+                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
+                            clientEdit { it.copy(dnsMode = mode) }
+                        },
+                        customDns = customDns,
+                        onCustomDns = { customDns = it; fieldsDirty = true },
+                        useCarrierDns = saved.useCarrierDns,
+                        onUseCarrierDns = { v -> clientEdit { it.copy(useCarrierDns = v) } }
+                    )
 
-                AdvancedSection(
-                    useUdp = saved.useUdp,
-                    onUseUdp = { v ->
-                        HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
-                        clientEdit { it.copy(useUdp = v) }
-                    },
-                    manualCaptcha = saved.manualCaptcha,
-                    onManualCaptcha = { v -> clientEdit { it.copy(manualCaptcha = v) } },
-                    showBond = effectiveTcpForward,
-                    bond = saved.bond,
-                    // bond триггерит рестарт прокси только у активного; иначе пишем данные.
-                    onBond = { v -> if (isActive) settingsViewModel.setBond(v) else clientEdit { it.copy(bond = v) } },
-                    magicSwitch = saved.magicSwitch,
-                    onMagicSwitch = { v -> clientEdit { it.copy(magicSwitch = v) } },
-                    magicTurn = magicTurn,
-                    onMagicTurn = { magicTurn = it; fieldsDirty = true },
-                    privacyMode = privacyMode
-                )
+                    AdvancedSection(
+                        useUdp = saved.useUdp,
+                        onUseUdp = { v ->
+                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
+                            clientEdit { it.copy(useUdp = v) }
+                        },
+                        manualCaptcha = saved.manualCaptcha,
+                        onManualCaptcha = { v -> clientEdit { it.copy(manualCaptcha = v) } },
+                        showBond = effectiveTcpForward,
+                        bond = saved.bond,
+                        // bond триггерит рестарт прокси только у активного; иначе пишем данные.
+                        onBond = { v -> if (isActive) settingsViewModel.setBond(v) else clientEdit { it.copy(bond = v) } },
+                        magicSwitch = saved.magicSwitch,
+                        onMagicSwitch = { v -> clientEdit { it.copy(magicSwitch = v) } },
+                        magicTurn = magicTurn,
+                        onMagicTurn = { magicTurn = it; fieldsDirty = true },
+                        privacyMode = privacyMode
+                    )
+                }
 
                 Spacer(Modifier.height(24.dp))
             }

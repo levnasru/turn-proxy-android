@@ -18,9 +18,20 @@ CoreArgs {
         add("-peer"); add(cfg.serverAddress)
         add("-provider"); add(cfg.provider)
         if (cfg.provider == Provider.VK) { add("-link"); add(cfg.vkLink) }
+        if (cfg.provider == Provider.HUB) {
+            add("-hub-url"); add(cfg.hubUrl.trim())
+            add("-hub-pin"); add(cfg.hubPin.trim())
+            add("-hub-token"); add(cfg.hubToken.trim())
+            // Кеш нужен всегда: за операторским белым списком хаб недоступен до
+            // подъёма туннеля, стартуем со старых кредов. Относительный путь ->
+            // CWD ядра (filesDir, см. CoreProcessController).
+            add("-hub-cache"); add(cfg.hubCache.trim().ifBlank { DEFAULT_HUB_CACHE })
+        }
         add("-listen"); add(cfg.localPort)
         if (cfg.threads > 0) { add("-n"); add(cfg.threads.toString()) }
-        if (cfg.streamsPerCred > 0 && cfg.streamsPerCred != 10) {
+        // -streams-per-cred читает только vk-провайдер (config.go): под хабом креды
+        // приходят готовыми, флаг никуда не доедет.
+        if (cfg.provider == Provider.VK && cfg.streamsPerCred > 0 && cfg.streamsPerCred != 10) {
             add("-streams-per-cred"); add(cfg.streamsPerCred.toString())
         }
         if (cfg.tcpForward) { add("-mode"); add("tcp") }
@@ -50,8 +61,11 @@ CoreArgs {
         if (clientId.isNotBlank()) { add("-client-id"); add(clientId) }
     }
 
+    /** Кеш кредов по умолчанию: относительный путь = CWD ядра (filesDir приложения). */
+    const val DEFAULT_HUB_CACHE = "hubcreds-cache.json"
+
     // Секреты: лог виден на экране и шарится пользователем.
-    private val SENSITIVE_FLAGS = setOf("-obf-key", "-link", "-client-id")
+    private val SENSITIVE_FLAGS = setOf("-obf-key", "-link", "-client-id", "-hub-token", "-hub-url")
 
     fun redactForLog(args: List<String>, privacy: Boolean): String = buildString {
         var i = 0

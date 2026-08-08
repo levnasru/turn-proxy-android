@@ -10,4 +10,7 @@ const val MAX_PROXY_RESTARTS = 8
 interface ProxyServiceLauncher {
     fun start()
     fun stop()
+
+    /** Поднять/погасить WG поверх уже работающего ядра. No-op, если сервис не запущен. */
+    fun setWireGuard(enabled: Boolean)
 }
