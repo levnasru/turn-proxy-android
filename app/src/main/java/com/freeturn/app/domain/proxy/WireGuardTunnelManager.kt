@@ -84,8 +84,13 @@ class WireGuardTunnelManager(context: Context) {
     private class NamedTunnel(private val tunnelName: String) : Tunnel {
         override fun getName(): String = tunnelName
 
+        // Единственный источник правды об интерфейсе - GoBackend зовёт это и при
+        // нашем backend.setState, и при внешнем revoke (второй VPN забрал
+        // единственный VPN-слот ОС). Без этого wireGuardUp остаётся true даже
+        // после того как система молча уронила туннель - UI врёт про рукопожатие.
         override fun onStateChange(newState: Tunnel.State) {
             ProxyServiceState.addLog("WireGuard: состояние $tunnelName -> $newState")
+            ProxyServiceState.setWireGuardUp(newState == Tunnel.State.UP)
         }
     }
 }

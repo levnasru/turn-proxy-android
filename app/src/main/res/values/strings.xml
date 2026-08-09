@@ -70,7 +70,8 @@
     <string name="import_success_title">Сервер добавлен</string>
     <string name="import_success_desc">Настройка завершена. Запустите подключение на главном экране.</string>
     <string name="raw_mode_title">Подключение задано конфигом</string>
-    <string name="raw_mode_desc">Профиль импортирован готовым файлом — все параметры внутри него. Настраивать вручную ничего не нужно, просто запустите подключение на главном экране.</string>
+    <string name="raw_mode_desc">Профиль импортирован готовым файлом — обычно ничего менять не нужно. Если сервер поменял адрес или ключи, поправьте команду запуска ниже.</string>
+    <string name="raw_mode_field_label">Команда запуска</string>
     <string name="import_success_go_home">К подключению</string>
     <string name="import_error_title">Ошибка импорта</string>
     <string name="import_error_desc">Некорректная ссылка или неподдерживаемая версия приложения.</string>
