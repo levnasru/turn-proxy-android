@@ -40,7 +40,12 @@ jobs:
       - name: Assemble release APKs
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease
+          # jniLibs живёт вне build/ (переживает clean) и не версионируется - чистим
+          # руками перед каждым релизным билдом, чтобы туда не мог просочиться чужой
+          # core от прошлого запуска. --no-build-cache - та же причина: релизная сборка
+          # редкая, корректность важнее пары сэкономленных секунд.
+          rm -rf app/src/main/jniLibs
+          ./gradlew :app:assembleRelease --no-build-cache
 
       # Имя ассета обязано содержать ABI - AppUpdater выбирает APK по Build.SUPPORTED_ABIS
       - name: Collect APKs
@@ -49,6 +54,20 @@ jobs:
           mkdir -p dist
           for abi in arm64-v8a armeabi-v7a; do
             cp "app/build/outputs/apk/release/app-${abi}-release.apk" "dist/freeturn-${VERSION}-${abi}.apk"
+          done
+
+      # Родилось из инцидента 2026-08-09: собранный core внутри APK не совпадал с тем,
+      # что fetchFreeturnCore реально скачал и зачекуммил - релиз ушёл без -hub-url.
+      # Проверяем сам распакованный .so, а не то, что таск СКАЗАЛ, что скачал.
+      - name: Verify bundled core actually supports -provider hub
+        run: |
+          for abi in arm64-v8a armeabi-v7a; do
+            so="dist-check-${abi}.so"
+            unzip -p "app/build/outputs/apk/release/app-${abi}-release.apk" "lib/${abi}/libfreeturn.so" > "$so"
+            if ! strings "$so" | grep -q "hub-url"; then
+              echo "::error::libfreeturn.so ($abi) в собранном APK не содержит -hub-url - core устарел или подменился"
+              exit 1
+            fi
           done
 
       - name: Upload assets to GitHub release
