@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.freeturn.app.data.config.SplitTunnelMode
+import com.freeturn.app.ui.components.HubCacheInjectDialog
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
 import com.freeturn.app.data.HapticUtil
 import com.freeturn.app.ui.screens.splittunnel.SplitTunnelModal
@@ -67,6 +68,7 @@ fun HomeScreen(
     RequestStartupPermissions(settingsViewModel)
 
     val showSplitSheet = rememberSaveable { mutableStateOf(false) }
+    val showInjectCacheDialog = remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // Нижний лист серверов (всегда виден).
@@ -190,7 +192,8 @@ fun HomeScreen(
                             )
                             if (enable) withVpnPermission { proxyViewModel.setWireGuard(true) }
                             else proxyViewModel.setWireGuard(false)
-                        }
+                        },
+                        onInjectCache = { showInjectCacheDialog.value = true }
                     )
                 }
 
@@ -221,6 +224,10 @@ fun HomeScreen(
             onDismiss = { showSplitSheet.value = false },
             containerColor = sheetColor
         )
+    }
+
+    if (showInjectCacheDialog.value) {
+        HubCacheInjectDialog(onDismissRequest = { showInjectCacheDialog.value = false })
     }
 
     UpdateDialogs(

@@ -6,4 +6,5 @@
     <string name="hub_pin_placeholder">base64...</string>
     <string name="hub_token_label">Токен доступа (если требуется)</string>
     <string name="hub_token_placeholder">Секретный токен</string>
+    <string name="hub_inject_cache_quick_action">Вставить кэш/токен</string>
 </resources>

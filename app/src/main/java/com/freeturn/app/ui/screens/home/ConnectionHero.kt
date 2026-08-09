@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,7 +77,8 @@ internal fun ConnectionHero(
     modifier: Modifier = Modifier,
     wireGuardConfigured: Boolean = false,
     wireGuardUp: Boolean = false,
-    onToggleWireGuard: (Boolean) -> Unit = {}
+    onToggleWireGuard: (Boolean) -> Unit = {},
+    onInjectCache: () -> Unit = {}
 ) {
     val kind = state.heroKind()
     val reducedMotion = LocalReducedMotion.current
@@ -94,6 +96,15 @@ internal fun ConnectionHero(
         Spacer(Modifier.height(20.dp))
 
         StatusLabel(state = state, reducedMotion = reducedMotion)
+
+        // Быстрое действие для hub_fetch_failed: не заставлять лезть в настройки
+        // за той же кнопкой, что уже есть в HubCard.
+        if (state is ProxyState.Error && state.showHubInject) {
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onInjectCache) {
+                Text(stringResource(R.string.hub_inject_cache_quick_action))
+            }
+        }
 
         Spacer(Modifier.height(10.dp))
 

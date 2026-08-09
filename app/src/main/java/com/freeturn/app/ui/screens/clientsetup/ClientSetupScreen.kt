@@ -22,9 +22,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -46,6 +43,7 @@ import com.freeturn.app.R
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.Provider
 import com.freeturn.app.data.HapticUtil
+import com.freeturn.app.ui.components.HubCacheInjectDialog
 import com.freeturn.app.ui.components.SectionLabel
 import com.freeturn.app.ui.components.SettingsCard
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
@@ -111,7 +109,6 @@ fun ClientSetupScreen(
     var hubToken     by remember(fieldsKey) { mutableStateOf(saved.hubToken) }
     
     var showInjectDialog by remember { mutableStateOf(false) }
-    var cacheJson by remember { mutableStateOf("") }
 
     // Поля живут своей жизнью с момента первой правки. До этого догоняем DataStore:
     // clientConfig стартует с дефолта и реальный конфиг приезжает уже после композиции.
@@ -289,36 +286,7 @@ fun ClientSetupScreen(
         }
         
         if (showInjectDialog) {
-            AlertDialog(
-                onDismissRequest = { showInjectDialog = false },
-                title = { Text("Вставить кэш хаба") },
-                text = {
-                    OutlinedTextField(
-                        value = cacheJson,
-                        onValueChange = { cacheJson = it },
-                        label = { Text("JSON кэш") },
-                        modifier = Modifier.fillMaxWidth().height(200.dp)
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        try {
-                            java.io.File(context.filesDir, "hubcreds-cache.json").writeText(cacheJson)
-                            android.widget.Toast.makeText(context, "Кэш сохранён", android.widget.Toast.LENGTH_SHORT).show()
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "Ошибка", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                        showInjectDialog = false
-                    }) {
-                        Text("Сохранить")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showInjectDialog = false }) {
-                        Text("Отмена")
-                    }
-                }
-            )
+            HubCacheInjectDialog(onDismissRequest = { showInjectDialog = false })
         }
     }
 }

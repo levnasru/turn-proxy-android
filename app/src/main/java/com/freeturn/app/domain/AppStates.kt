@@ -26,7 +26,7 @@ sealed class ProxyState {
     object Starting : ProxyState()
     data class Connecting(val active: Int, val total: Int) : ProxyState()
     data class Running(val active: Int, val total: Int) : ProxyState()
-    data class Error(val message: String) : ProxyState()
+    data class Error(val message: String, val showHubInject: Boolean = false) : ProxyState()
     data class CaptchaRequired(val url: String, val sessionId: Long = 0L) : ProxyState()
 }
 

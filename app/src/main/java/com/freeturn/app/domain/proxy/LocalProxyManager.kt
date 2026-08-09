@@ -172,12 +172,13 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
             }
             is StartupResult.Failed -> {
                 stopProxy()
-                val msg = if (result.message.contains("hub_fetch_failed")) {
+                val hubFetchFailed = result.message.contains("hub_fetch_failed")
+                val msg = if (hubFetchFailed) {
                     "Ошибка: Хаб недоступен. Отключитесь от WiFi/мобильной сети оператора (если он блокирует хаб) для первого запуска, или вставьте кэш вручную."
                 } else {
                     result.message
                 }
-                setErrorWithAutoReset(msg)
+                setErrorWithAutoReset(msg, showHubInject = hubFetchFailed)
             }
             is StartupResult.Success -> {
                 val s = ProxyServiceState.connectionStats.value
@@ -221,9 +222,12 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
         }
     }
 
-    fun setErrorWithAutoReset(message: String) {
+    fun setErrorWithAutoReset(message: String, showHubInject: Boolean = false) {
         resetJob?.cancel()
-        _proxyState.value = ProxyState.Error(message)
+        _proxyState.value = ProxyState.Error(message, showHubInject)
+        // Требует действия пользователя (вставить кэш) - не гасим таймером, иначе
+        // кнопка исчезнет раньше, чем пользователь успеет ей воспользоваться.
+        if (showHubInject) return
         resetJob = scope.launch {
             delay(4_000)
             if (_proxyState.value is ProxyState.Error) _proxyState.value = ProxyState.Idle
