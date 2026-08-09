@@ -217,11 +217,19 @@ class AppUpdater(private val context: Context) {
 
     companion object {
         private const val RELEASES_URL =
-            "https://api.github.com/repos/samosvalishe/turn-proxy-android/releases/latest"
+            "https://api.github.com/repos/levnasru/turn-proxy-android/releases/latest"
+
+        // Извлекает первую числовую dotted-версию из строки: и versionName форка
+        // ("levnasru-3.5.2-beta"), и тег релиза ("v3.5.2") дают чистое "3.5.2" -
+        // префикс/суффикс не ломает сравнение toIntOrNull-ом в 0.
+        private val VERSION_CORE = Regex("""\d+(?:\.\d+)*""")
+
+        private fun parts(v: String): List<Int> =
+            (VERSION_CORE.find(v)?.value ?: "0").split(".").map { it.toIntOrNull() ?: 0 }
 
         fun isNewer(remote: String, current: String): Boolean {
-            val r = remote.split(".").map { it.toIntOrNull() ?: 0 }
-            val c = current.split(".").map { it.toIntOrNull() ?: 0 }
+            val r = parts(remote)
+            val c = parts(current)
             for (i in 0 until maxOf(r.size, c.size)) {
                 val rv = r.getOrElse(i) { 0 }
                 val cv = c.getOrElse(i) { 0 }

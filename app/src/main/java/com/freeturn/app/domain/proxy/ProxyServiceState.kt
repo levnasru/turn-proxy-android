@@ -62,6 +62,18 @@ object ProxyServiceState {
     private val _teardownComplete = MutableStateFlow(true)
     val teardownComplete: StateFlow<Boolean> = _teardownComplete.asStateFlow()
 
+    /**
+     * WG поднят. Отдельно от [isRunning]: туннель через VK живёт своей жизнью, WG
+     * гасится и поднимается кнопкой, не трогая ядро (пересоздание сессии стоит
+     * ~10 минут остывания TURN-аллокаций).
+     */
+    private val _wireGuardUp = MutableStateFlow(false)
+    val wireGuardUp: StateFlow<Boolean> = _wireGuardUp.asStateFlow()
+
+    fun setWireGuardUp(value: Boolean) {
+        _wireGuardUp.value = value
+    }
+
     fun setRunning(value: Boolean) {
         _isRunning.value = value
     }

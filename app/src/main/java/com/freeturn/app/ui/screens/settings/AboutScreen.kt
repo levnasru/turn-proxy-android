@@ -91,33 +91,43 @@ fun AboutScreen(onBack: () -> Unit) {
 
                 SectionLabel(stringResource(R.string.about_links))
                 SettingsGroup {
-                    SettingsGroupItem(0, 3) {
+                    SettingsGroupItem(0, 4) {
                         SettingsEntryRow(
                             iconRes = R.drawable.code_24px,
                             title = stringResource(R.string.android_client),
-                            subtitle = "samosvalishe/turn-proxy-android",
+                            subtitle = "levnasru/turn-proxy-android",
+                            trailingRes = R.drawable.open_in_new_24px,
+                            trailingTint = MaterialTheme.colorScheme.primary,
+                            onClick = { open("https://github.com/levnasru/turn-proxy-android") }
+                        )
+                    }
+                    SettingsGroupItem(1, 4) {
+                        SettingsEntryRow(
+                            iconRes = R.drawable.terminal_24px,
+                            title = stringResource(R.string.proxy_core),
+                            subtitle = "levnasru/free-turn-proxy",
+                            trailingRes = R.drawable.open_in_new_24px,
+                            trailingTint = MaterialTheme.colorScheme.primary,
+                            onClick = { open("https://github.com/levnasru/free-turn-proxy") }
+                        )
+                    }
+                    SettingsGroupItem(2, 4) {
+                        SettingsEntryRow(
+                            iconRes = R.drawable.code_24px,
+                            title = "Оригинальный проект",
+                            subtitle = "samosvalishe",
                             trailingRes = R.drawable.open_in_new_24px,
                             trailingTint = MaterialTheme.colorScheme.primary,
                             onClick = { open("https://github.com/samosvalishe/turn-proxy-android") }
                         )
                     }
-                    SettingsGroupItem(1, 3) {
-                        SettingsEntryRow(
-                            iconRes = R.drawable.terminal_24px,
-                            title = stringResource(R.string.proxy_core),
-                            subtitle = "samosvalishe/free-turn-proxy",
-                            trailingRes = R.drawable.open_in_new_24px,
-                            trailingTint = MaterialTheme.colorScheme.primary,
-                            onClick = { open("https://github.com/samosvalishe/free-turn-proxy") }
-                        )
-                    }
-                    SettingsGroupItem(2, 3) {
+                    SettingsGroupItem(3, 4) {
                         SettingsEntryRow(
                             iconRes = R.drawable.public_24px,
                             title = stringResource(R.string.tg_channel),
                             trailingRes = R.drawable.open_in_new_24px,
                             trailingTint = MaterialTheme.colorScheme.primary,
-                            onClick = { open("https://t.me/+53nh4UNiSv5lNTgy") }
+                            onClick = { open("https://t.me/bibika1997") }
                         )
                     }
                 }

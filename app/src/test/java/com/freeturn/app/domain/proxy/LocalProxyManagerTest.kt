@@ -27,13 +27,16 @@ class LocalProxyManagerTest {
     private class FakeLauncher : ProxyServiceLauncher {
         var started = false
         var stopped = false
+        var wgCalls = mutableListOf<Boolean>()
         override fun start() { started = true }
         override fun stop() { stopped = true }
+        override fun setWireGuard(enabled: Boolean) { wgCalls += enabled }
     }
 
     private class ThrowingLauncher : ProxyServiceLauncher {
         override fun start(): Unit = throw IllegalStateException("not allowed")
         override fun stop() {}
+        override fun setWireGuard(enabled: Boolean) {}
     }
 
     @Before
@@ -55,6 +58,24 @@ class LocalProxyManagerTest {
         ProxyServiceState.setCaptchaSession(null)
         ProxyServiceState.clearConnectedSince()
         ProxyServiceState.clearLogs()
+        ProxyServiceState.setWireGuardUp(false)
+    }
+
+    // Кнопка WG работает только поверх живого ядра и не трогает сам процесс.
+    @Test
+    fun wireGuardToggleRequiresRunningCore() = runTest(dispatcher) {
+        val launcher = FakeLauncher()
+        val mgr = LocalProxyManager(launcher)
+
+        mgr.setWireGuard(true)
+        assertTrue("без ядра WG поднимать нечего", launcher.wgCalls.isEmpty())
+        assertTrue(mgr.proxyState.value is ProxyState.Error)
+
+        ProxyServiceState.setRunning(true)
+        runCurrent()
+        mgr.setWireGuard(false)
+        assertEquals(listOf(false), launcher.wgCalls)
+        assertTrue("ядро не трогаем", !launcher.stopped)
     }
 
     // Регрессия P1 #2: FGS-фейл пишет Failed при isRunning == false - раньше менеджер ждал 5 минут.

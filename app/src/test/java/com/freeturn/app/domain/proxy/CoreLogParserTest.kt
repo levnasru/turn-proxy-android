@@ -75,11 +75,13 @@ class CoreLogParserTest {
 
     @Test
     fun `fatal markers detected`() {
+        // Реальный формат ядра: log.Printf добавляет таймстемп + "[ERROR] " (logx.go) -
+        // startsWith тут не сработает, эти две строки матчатся по токену внутри.
         val lines = listOf(
             "panic: runtime error: index out of range",
             "fatal error: all goroutines are asleep",
-            "ERROR: all VK credentials failed",
-            "FATAL_CAPTCHA: gave up"
+            "2026/08/09 02:47:12 [ERROR] fatal error: hub_fetch_failed: hub: HTTP 401: invalid token",
+            "2026/08/09 02:47:12 [ERROR] [STREAM 1] [Captcha] FATAL: 0 connected streams and solve modes exhausted"
         )
         for (l in lines) {
             assertTrue("expected fatal: $l", CoreLogParser.parse(l).any { it is CoreLogEvent.FatalStartup })

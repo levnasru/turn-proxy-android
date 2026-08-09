@@ -30,10 +30,20 @@ data class ClientConfig(
      */
     val splitTunnelApps: String = "",
     val logsEnabled: Boolean = true,
-    val clientId: String = ""
+    val clientId: String = "",
+    /** `-hub-url`: один или несколько эндпоинтов через запятую (аккаунт на эндпоинт). */
+    val hubUrl: String = "",
+    /** `-hub-pin`: base64 SHA-256 SPKI сертификата хаба. */
+    val hubPin: String = "",
+    /** `-hub-token`: Bearer. Секрет - в логах маскируется, см. CoreArgs.SENSITIVE_FLAGS. */
+    val hubToken: String = "",
+    /** `-hub-cache`: дисковый кеш кредов. Пустой = путь по умолчанию в filesDir. */
+    val hubCache: String = ""
 ) {
     val wireGuardActive: Boolean
         get() = tunnelTransport == TunnelTransport.WIREGUARD && wireGuardConfig.isNotBlank()
+
+    val hubMode: Boolean get() = provider == Provider.HUB
 
     companion object {
         const val DEFAULT_LOCAL_PORT = "127.0.0.1:9000"

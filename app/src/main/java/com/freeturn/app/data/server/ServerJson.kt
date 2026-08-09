@@ -71,6 +71,10 @@ internal object ServerJson {
             put("splitTunnelApps", p.client.splitTunnelApps)
             put("logsEnabled", p.client.logsEnabled)
             put("clientId", p.client.clientId)
+            put("hubUrl", p.client.hubUrl)
+            put("hubPin", p.client.hubPin)
+            put("hubToken", p.client.hubToken)
+            put("hubCache", p.client.hubCache)
         })
         put("proxyListen", p.proxyListen)
         put("proxyConnect", p.proxyConnect)
@@ -134,7 +138,11 @@ internal object ServerJson {
                 },
                 splitTunnelApps = cliO.optString("splitTunnelApps"),
                 logsEnabled = cliO.optBoolean("logsEnabled", true),
-                clientId = cliO.optString("clientId")
+                clientId = cliO.optString("clientId"),
+                hubUrl = cliO.optString("hubUrl"),
+                hubPin = cliO.optString("hubPin"),
+                hubToken = cliO.optString("hubToken"),
+                hubCache = cliO.optString("hubCache")
             ),
             proxyListen = o.optString("proxyListen").ifBlank { "0.0.0.0:56000" },
             proxyConnect = o.optString("proxyConnect").ifBlank { "127.0.0.1:40537" },

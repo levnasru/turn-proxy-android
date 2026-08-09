@@ -43,7 +43,12 @@ import com.freeturn.app.R
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.Provider
 import com.freeturn.app.data.HapticUtil
+import com.freeturn.app.ui.components.HubCacheInjectDialog
+import com.freeturn.app.ui.components.SectionLabel
+import com.freeturn.app.ui.components.SettingsCard
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
+import com.freeturn.app.ui.components.SettingsControlLabel
+import com.freeturn.app.ui.components.SettingsFieldSlot
 import com.freeturn.app.ui.theme.Spacing
 import com.freeturn.app.viewmodel.server.ServerViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
@@ -99,6 +104,11 @@ fun ClientSetupScreen(
     var localPort    by remember(fieldsKey) { mutableStateOf(saved.localPort) }
     var magicTurn    by remember(fieldsKey) { mutableStateOf(saved.magicTurn) }
     var customDns    by remember(fieldsKey) { mutableStateOf(saved.customDns) }
+    var hubUrl       by remember(fieldsKey) { mutableStateOf(saved.hubUrl) }
+    var hubPin       by remember(fieldsKey) { mutableStateOf(saved.hubPin) }
+    var hubToken     by remember(fieldsKey) { mutableStateOf(saved.hubToken) }
+    
+    var showInjectDialog by remember { mutableStateOf(false) }
 
     // Поля живут своей жизнью с момента первой правки. До этого догоняем DataStore:
     // clientConfig стартует с дефолта и реальный конфиг приезжает уже после композиции.
@@ -112,6 +122,9 @@ fun ClientSetupScreen(
         localPort = saved.localPort
         magicTurn = saved.magicTurn
         customDns = saved.customDns
+        hubUrl = saved.hubUrl
+        hubPin = saved.hubPin
+        hubToken = saved.hubToken
     }
 
     // Автозаполнение адреса сервера из SSH-конфига если поле пустое
@@ -125,7 +138,7 @@ fun ClientSetupScreen(
 
     // Авто-сохранение с дебаунсом 600 мс.
     LaunchedEffect(
-        fieldsKey, serverAddress, vkLink, threads, streamsPerCred, localPort, magicTurn, customDns
+        fieldsKey, serverAddress, vkLink, threads, streamsPerCred, localPort, magicTurn, customDns, hubUrl, hubPin, hubToken
     ) {
         if (!fieldsDirty) return@LaunchedEffect
         delay(600)
@@ -137,7 +150,10 @@ fun ClientSetupScreen(
                 streamsPerCred = streamsPerCred.roundToInt(),
                 localPort     = localPort.trim(),
                 magicTurn     = magicTurn.trim(),
-                customDns     = customDns.trim()
+                customDns     = customDns.trim(),
+                hubUrl        = hubUrl.trim(),
+                hubPin        = hubPin.trim(),
+                hubToken      = hubToken.trim()
             )
         }
     }
@@ -179,63 +195,98 @@ fun ClientSetupScreen(
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalArrangement = Arrangement.spacedBy(Spacing.lg)
             ) {
-                ConnectionCard(
-                    serverAddress = serverAddress,
-                    onServerAddress = { serverAddress = it; fieldsDirty = true },
-                    showVkLink = saved.provider == Provider.VK,
-                    vkLink = vkLink,
-                    onVkLink = { vkLink = it; fieldsDirty = true },
-                    localPort = localPort,
-                    onLocalPort = { localPort = it; fieldsDirty = true },
-                    privacyMode = privacyMode
-                )
+                // Raw-режим: подключение целиком задано импортированным конфигом
+                // (rawCommand перекрывает все поля ниже). Показывать их = мусорные
+                // мёртвые контролы, которые ничего не меняют и путают. Прячем всё,
+                // оставляя одну поясняющую карточку.
+                if (saved.isRawMode) {
+                    SectionLabel(stringResource(R.string.provider_connection_settings))
+                    SettingsCard {
+                        SettingsFieldSlot {
+                            SettingsControlLabel(
+                                title = stringResource(R.string.raw_mode_title),
+                                desc = stringResource(R.string.raw_mode_desc)
+                            )
+                        }
+                    }
+                } else {
+                    ConnectionCard(
+                        serverAddress = serverAddress,
+                        onServerAddress = { serverAddress = it; fieldsDirty = true },
+                        showVkLink = saved.provider == Provider.VK,
+                        vkLink = vkLink,
+                        onVkLink = { vkLink = it; fieldsDirty = true },
+                        localPort = localPort,
+                        onLocalPort = { localPort = it; fieldsDirty = true },
+                        privacyMode = privacyMode
+                    )
 
-                PerformanceCard(
-                    threads = threads,
-                    // потоки-на-аккаунт не могут превышать общее число потоков
-                    onThreads = {
-                        threads = it
-                        if (streamsPerCred > it) streamsPerCred = it
-                        fieldsDirty = true
-                    },
-                    streamsPerCred = streamsPerCred,
-                    onStreamsPerCred = { streamsPerCred = it.coerceAtMost(threads); fieldsDirty = true },
-                    onTick = { HapticUtil.perform(context, HapticUtil.Pattern.SELECTION) }
-                )
+                    if (saved.provider == Provider.HUB) {
+                        SectionLabel("Настройки Хаба") // TODO: move to string resource
+                        HubCard(
+                            hubUrl = hubUrl,
+                            onHubUrl = { hubUrl = it; fieldsDirty = true },
+                            hubPin = hubPin,
+                            onHubPin = { hubPin = it; fieldsDirty = true },
+                            hubToken = hubToken,
+                            onHubToken = { hubToken = it; fieldsDirty = true },
+                            privacyMode = privacyMode,
+                            onInjectCache = { showInjectDialog = true }
+                        )
+                    }
 
-                DnsCard(
-                    dnsMode = saved.dnsMode,
-                    onDnsMode = { mode ->
-                        HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
-                        clientEdit { it.copy(dnsMode = mode) }
-                    },
-                    customDns = customDns,
-                    onCustomDns = { customDns = it; fieldsDirty = true },
-                    useCarrierDns = saved.useCarrierDns,
-                    onUseCarrierDns = { v -> clientEdit { it.copy(useCarrierDns = v) } }
-                )
 
-                AdvancedSection(
-                    useUdp = saved.useUdp,
-                    onUseUdp = { v ->
-                        HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
-                        clientEdit { it.copy(useUdp = v) }
-                    },
-                    manualCaptcha = saved.manualCaptcha,
-                    onManualCaptcha = { v -> clientEdit { it.copy(manualCaptcha = v) } },
-                    showBond = effectiveTcpForward,
-                    bond = saved.bond,
-                    // bond триггерит рестарт прокси только у активного; иначе пишем данные.
-                    onBond = { v -> if (isActive) settingsViewModel.setBond(v) else clientEdit { it.copy(bond = v) } },
-                    magicSwitch = saved.magicSwitch,
-                    onMagicSwitch = { v -> clientEdit { it.copy(magicSwitch = v) } },
-                    magicTurn = magicTurn,
-                    onMagicTurn = { magicTurn = it; fieldsDirty = true },
-                    privacyMode = privacyMode
-                )
+                    PerformanceCard(
+                        threads = threads,
+                        // потоки-на-аккаунт не могут превышать общее число потоков
+                        onThreads = {
+                            threads = it
+                            if (streamsPerCred > it) streamsPerCred = it
+                            fieldsDirty = true
+                        },
+                        streamsPerCred = streamsPerCred,
+                        onStreamsPerCred = { streamsPerCred = it.coerceAtMost(threads); fieldsDirty = true },
+                        onTick = { HapticUtil.perform(context, HapticUtil.Pattern.SELECTION) }
+                    )
+
+                    DnsCard(
+                        dnsMode = saved.dnsMode,
+                        onDnsMode = { mode ->
+                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
+                            clientEdit { it.copy(dnsMode = mode) }
+                        },
+                        customDns = customDns,
+                        onCustomDns = { customDns = it; fieldsDirty = true },
+                        useCarrierDns = saved.useCarrierDns,
+                        onUseCarrierDns = { v -> clientEdit { it.copy(useCarrierDns = v) } }
+                    )
+
+                    AdvancedSection(
+                        useUdp = saved.useUdp,
+                        onUseUdp = { v ->
+                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
+                            clientEdit { it.copy(useUdp = v) }
+                        },
+                        manualCaptcha = saved.manualCaptcha,
+                        onManualCaptcha = { v -> clientEdit { it.copy(manualCaptcha = v) } },
+                        showBond = effectiveTcpForward,
+                        bond = saved.bond,
+                        // bond триггерит рестарт прокси только у активного; иначе пишем данные.
+                        onBond = { v -> if (isActive) settingsViewModel.setBond(v) else clientEdit { it.copy(bond = v) } },
+                        magicSwitch = saved.magicSwitch,
+                        onMagicSwitch = { v -> clientEdit { it.copy(magicSwitch = v) } },
+                        magicTurn = magicTurn,
+                        onMagicTurn = { magicTurn = it; fieldsDirty = true },
+                        privacyMode = privacyMode
+                    )
+                }
 
                 Spacer(Modifier.height(24.dp))
             }
+        }
+        
+        if (showInjectDialog) {
+            HubCacheInjectDialog(onDismissRequest = { showInjectDialog = false })
         }
     }
 }

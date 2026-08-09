@@ -50,11 +50,14 @@ object CoreLogParser {
         }
 
         // Фатальный старт: не матчим "rate limit" (часть retry-цикла), ищем финальный отказ.
+        // panic:/fatal error: - голый вывод рантайма Go, без префикса. Остальное идёт через
+        // logx (log.Printf добавляет таймстемп + "[ERROR] "), поэтому startsWith не сработает -
+        // матчим по уникальному токену внутри строки (hub.go:371, token_call.go:121/204).
         val lower = line.lowercase()
         if (lower.startsWith("panic:") ||
             lower.startsWith("fatal error:") ||
-            lower.contains("all vk credentials failed") ||
-            lower.contains("fatal_captcha")
+            lower.contains("hub_fetch_failed") ||
+            lower.contains("[captcha] fatal:")
         ) {
             events += CoreLogEvent.FatalStartup(line)
         }

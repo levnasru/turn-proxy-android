@@ -1,4 +1,4 @@
-﻿package com.freeturn.app.domain.proxy
+package com.freeturn.app.domain.proxy
 
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.domain.ConnectionStats
@@ -110,10 +110,25 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
 
     suspend fun startProxy(cfg: ClientConfig) {
         if (ProxyServiceState.isRunning.value) return
+        // isRunning гаснет в начале onDestroy - раньше, чем ядро реально отдаёт TURN-аллокации
+        // (SIGTERM + до 6с graceful stop, см. CoreProcessController). Без этой паузы быстрый
+        // toggle стартует новый процесс поверх ещё не освобождённых аллокаций предыдущего.
+        withTimeoutOrNull(10_000) { ProxyServiceState.teardownComplete.first { it } }
         if (_proxyState.value is ProxyState.Error) _proxyState.value = ProxyState.Idle
 
-        if (!cfg.isRawMode && (cfg.serverAddress.isBlank() || cfg.vkLink.isBlank())) {
+        if (!cfg.isRawMode && cfg.serverAddress.isBlank()) {
             setErrorWithAutoReset("Не заполнены настройки клиента")
+            return
+        }
+        if (!cfg.isRawMode && !cfg.hubMode && cfg.vkLink.isBlank()) {
+            setErrorWithAutoReset("Не заполнены настройки клиента")
+            return
+        }
+        // Ядро без этих трёх флагов просто откажется стартовать (config.go).
+        if (!cfg.isRawMode && cfg.hubMode &&
+            (cfg.hubUrl.isBlank() || cfg.hubPin.isBlank() || cfg.hubToken.isBlank())
+        ) {
+            setErrorWithAutoReset("Не заполнены настройки хаба: URL, pin и токен")
             return
         }
         if (cfg.isRawMode && cfg.rawCommand.isBlank()) {
@@ -157,7 +172,13 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
             }
             is StartupResult.Failed -> {
                 stopProxy()
-                setErrorWithAutoReset(result.message)
+                val hubFetchFailed = result.message.contains("hub_fetch_failed")
+                val msg = if (hubFetchFailed) {
+                    "Ошибка: Хаб недоступен. Отключитесь от WiFi/мобильной сети оператора (если он блокирует хаб) для первого запуска, или вставьте кэш вручную."
+                } else {
+                    result.message
+                }
+                setErrorWithAutoReset(msg, showHubInject = hubFetchFailed)
             }
             is StartupResult.Success -> {
                 val s = ProxyServiceState.connectionStats.value
@@ -180,6 +201,15 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
         }
     }
 
+    /** Кнопка WG. Ядро не трогаем - переключение внешнего VPN не стоит рестарта сессии. */
+    fun setWireGuard(enabled: Boolean) {
+        if (!ProxyServiceState.isRunning.value) {
+            if (enabled) setErrorWithAutoReset("Сначала поднимите туннель")
+            return
+        }
+        launcher.setWireGuard(enabled)
+    }
+
     fun dismissCaptcha() {
         ProxyServiceState.setCaptchaSession(null)
         if (_proxyState.value is ProxyState.CaptchaRequired) {
@@ -192,9 +222,12 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
         }
     }
 
-    fun setErrorWithAutoReset(message: String) {
+    fun setErrorWithAutoReset(message: String, showHubInject: Boolean = false) {
         resetJob?.cancel()
-        _proxyState.value = ProxyState.Error(message)
+        _proxyState.value = ProxyState.Error(message, showHubInject)
+        // Требует действия пользователя (вставить кэш) - не гасим таймером, иначе
+        // кнопка исчезнет раньше, чем пользователь успеет ей воспользоваться.
+        if (showHubInject) return
         resetJob = scope.launch {
             delay(4_000)
             if (_proxyState.value is ProxyState.Error) _proxyState.value = ProxyState.Idle

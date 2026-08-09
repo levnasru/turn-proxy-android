@@ -11,7 +11,10 @@ object DnsMode {
 
 object Provider {
     const val VK = "vk"
-    val VALUES = listOf(VK)
+
+    /** Готовые TURN-креды с доверенного хаба: VK API клиент не трогает, капчи нет. */
+    const val HUB = "hub"
+    val VALUES = listOf(VK, HUB)
 }
 
 object ObfProfile {

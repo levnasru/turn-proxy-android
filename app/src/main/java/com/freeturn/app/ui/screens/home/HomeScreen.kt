@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.freeturn.app.data.config.SplitTunnelMode
+import com.freeturn.app.ui.components.HubCacheInjectDialog
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
 import com.freeturn.app.data.HapticUtil
 import com.freeturn.app.ui.screens.splittunnel.SplitTunnelModal
@@ -68,6 +69,7 @@ fun HomeScreen(
     RequestStartupPermissions(settingsViewModel)
 
     val showSplitSheet = rememberSaveable { mutableStateOf(false) }
+    val showInjectCacheDialog = remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // Нижний лист серверов (всегда виден).
@@ -77,22 +79,33 @@ fun HomeScreen(
             enabledValues = setOf(SheetValue.PartiallyExpanded, SheetValue.Expanded)
         )
     )
+    val wireGuardUp by proxyViewModel.wireGuardUp.collectAsStateWithLifecycle()
+    // Что делать после выдачи VPN-разрешения: старт всей сессии или только WG.
+    val afterVpnPermission = remember { mutableStateOf<(() -> Unit)?>(null) }
     // Запрос VPN-разрешения для WireGuard.
     val wireGuardPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        if (VpnService.prepare(context) == null) {
-            proxyViewModel.startProxy()
+        val next = afterVpnPermission.value
+        afterVpnPermission.value = null
+        if (VpnService.prepare(context) == null) next?.invoke()
+    }
+
+    /** Выполнить [action], сперва спросив VPN-разрешение, если его ещё нет. */
+    fun withVpnPermission(action: () -> Unit) {
+        val vpnIntent: Intent? = VpnService.prepare(context)
+        if (vpnIntent != null) {
+            afterVpnPermission.value = action
+            wireGuardPermissionLauncher.launch(vpnIntent)
+            return
         }
+        action()
     }
 
     fun startProxyWithTunnel() {
         if (clientConfig.wireGuardActive) {
-            val vpnIntent: Intent? = VpnService.prepare(context)
-            if (vpnIntent != null) {
-                wireGuardPermissionLauncher.launch(vpnIntent)
-                return
-            }
+            withVpnPermission { proxyViewModel.startProxy() }
+            return
         }
         proxyViewModel.startProxy()
     }
@@ -171,7 +184,18 @@ fun HomeScreen(
                                     proxyViewModel.stopProxy()
                                 }
                             }
-                        }
+                        },
+                        wireGuardConfigured = clientConfig.wireGuardActive,
+                        wireGuardUp = wireGuardUp,
+                        onToggleWireGuard = { enable ->
+                            HapticUtil.perform(
+                                context,
+                                if (enable) HapticUtil.Pattern.TOGGLE_ON else HapticUtil.Pattern.TOGGLE_OFF
+                            )
+                            if (enable) withVpnPermission { proxyViewModel.setWireGuard(true) }
+                            else proxyViewModel.setWireGuard(false)
+                        },
+                        onInjectCache = { showInjectCacheDialog.value = true }
                     )
                 }
 
@@ -202,6 +226,10 @@ fun HomeScreen(
             onDismiss = { showSplitSheet.value = false },
             containerColor = sheetColor
         )
+    }
+
+    if (showInjectCacheDialog.value) {
+        HubCacheInjectDialog(onDismissRequest = { showInjectCacheDialog.value = false })
     }
 
     UpdateDialogs(

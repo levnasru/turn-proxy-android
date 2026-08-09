@@ -20,6 +20,7 @@ class ProxyViewModel(
     val connectedSince: StateFlow<Long?> = ProxyServiceState.connectedSince
     val tunnelActive: StateFlow<Boolean> = ProxyServiceState.tunnelActive
     val logs: StateFlow<List<LogEntry>> = ProxyServiceState.logs
+    val wireGuardUp: StateFlow<Boolean> = ProxyServiceState.wireGuardUp
 
     fun startProxy() {
         viewModelScope.launch {
@@ -30,6 +31,10 @@ class ProxyViewModel(
 
     fun stopProxy() {
         viewModelScope.launch { proxyManager.stopProxy() }
+    }
+
+    fun setWireGuard(enabled: Boolean) {
+        proxyManager.setWireGuard(enabled)
     }
 
     fun dismissCaptcha() {
