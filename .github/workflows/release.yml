@@ -45,7 +45,11 @@ jobs:
           # core от прошлого запуска. --no-build-cache - та же причина: релизная сборка
           # редкая, корректность важнее пары сэкономленных секунд.
           rm -rf app/src/main/jniLibs
+          rm -rf "$HOME/.gradle/caches/freeturn-core"
           ./gradlew :app:assembleRelease --no-build-cache
+          echo "::group::core sha256 after build"
+          sha256sum app/src/main/jniLibs/*/libfreeturn.so
+          echo "::endgroup::"
 
       # Имя ассета обязано содержать ABI - AppUpdater выбирает APK по Build.SUPPORTED_ABIS
       - name: Collect APKs
