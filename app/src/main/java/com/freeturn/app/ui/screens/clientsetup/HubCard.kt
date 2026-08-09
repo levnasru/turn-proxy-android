@@ -36,7 +36,7 @@ internal fun HubCard(
                 onValueChange = { if (!privacyMode) onHubUrl(it) },
                 labelRes = R.string.hub_url_label,
                 placeholderRes = R.string.hub_url_placeholder,
-                supportingRes = 0,
+                supportingRes = null,
                 readOnly = privacyMode,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
             )
@@ -48,7 +48,7 @@ internal fun HubCard(
                 onValueChange = { if (!privacyMode) onHubPin(it) },
                 labelRes = R.string.hub_pin_label,
                 placeholderRes = R.string.hub_pin_placeholder,
-                supportingRes = 0,
+                supportingRes = null,
                 readOnly = privacyMode,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
@@ -60,7 +60,7 @@ internal fun HubCard(
                 onValueChange = { if (!privacyMode) onHubToken(it) },
                 labelRes = R.string.hub_token_label,
                 placeholderRes = R.string.hub_token_placeholder,
-                supportingRes = 0,
+                supportingRes = null,
                 readOnly = privacyMode,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )

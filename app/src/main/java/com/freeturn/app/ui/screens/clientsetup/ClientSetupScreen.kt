@@ -44,12 +44,15 @@ import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.Provider
 import com.freeturn.app.data.HapticUtil
 import com.freeturn.app.ui.components.HubCacheInjectDialog
+import com.freeturn.app.ui.components.LabeledTextField
 import com.freeturn.app.ui.components.SectionLabel
 import com.freeturn.app.ui.components.SettingsCard
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
 import com.freeturn.app.ui.components.SettingsControlLabel
 import com.freeturn.app.ui.components.SettingsFieldSlot
+import com.freeturn.app.ui.components.SettingsRowDivider
 import com.freeturn.app.ui.theme.Spacing
+import com.freeturn.app.ui.util.redact
 import com.freeturn.app.viewmodel.server.ServerViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
 import kotlin.math.roundToInt
@@ -107,7 +110,8 @@ fun ClientSetupScreen(
     var hubUrl       by remember(fieldsKey) { mutableStateOf(saved.hubUrl) }
     var hubPin       by remember(fieldsKey) { mutableStateOf(saved.hubPin) }
     var hubToken     by remember(fieldsKey) { mutableStateOf(saved.hubToken) }
-    
+    var rawCommand   by remember(fieldsKey) { mutableStateOf(saved.rawCommand) }
+
     var showInjectDialog by remember { mutableStateOf(false) }
 
     // Поля живут своей жизнью с момента первой правки. До этого догоняем DataStore:
@@ -125,6 +129,7 @@ fun ClientSetupScreen(
         hubUrl = saved.hubUrl
         hubPin = saved.hubPin
         hubToken = saved.hubToken
+        rawCommand = saved.rawCommand
     }
 
     // Автозаполнение адреса сервера из SSH-конфига если поле пустое
@@ -138,7 +143,7 @@ fun ClientSetupScreen(
 
     // Авто-сохранение с дебаунсом 600 мс.
     LaunchedEffect(
-        fieldsKey, serverAddress, vkLink, threads, streamsPerCred, localPort, magicTurn, customDns, hubUrl, hubPin, hubToken
+        fieldsKey, serverAddress, vkLink, threads, streamsPerCred, localPort, magicTurn, customDns, hubUrl, hubPin, hubToken, rawCommand
     ) {
         if (!fieldsDirty) return@LaunchedEffect
         delay(600)
@@ -153,7 +158,8 @@ fun ClientSetupScreen(
                 customDns     = customDns.trim(),
                 hubUrl        = hubUrl.trim(),
                 hubPin        = hubPin.trim(),
-                hubToken      = hubToken.trim()
+                hubToken      = hubToken.trim(),
+                rawCommand    = rawCommand.trim()
             )
         }
     }
@@ -196,9 +202,12 @@ fun ClientSetupScreen(
                 verticalArrangement = Arrangement.spacedBy(Spacing.lg)
             ) {
                 // Raw-режим: подключение целиком задано импортированным конфигом
-                // (rawCommand перекрывает все поля ниже). Показывать их = мусорные
-                // мёртвые контролы, которые ничего не меняют и путают. Прячем всё,
-                // оставляя одну поясняющую карточку.
+                // (rawCommand перекрывает все поля ниже, структурные Provider.HUB-поля
+                // сюда не доходят). Показывать их = мусорные мёртвые контролы, которые
+                // ничего не меняют и путают. Вместо них - сама rawCommand как editable
+                // поле: это единственный путь редактировать импортированный семейный
+                // профиль (make-backup.js всегда шлёт isRawMode=true), без него
+                // единственный способ поменять что-то - новый импорт с нуля.
                 if (saved.isRawMode) {
                     SectionLabel(stringResource(R.string.provider_connection_settings))
                     SettingsCard {
@@ -206,6 +215,16 @@ fun ClientSetupScreen(
                             SettingsControlLabel(
                                 title = stringResource(R.string.raw_mode_title),
                                 desc = stringResource(R.string.raw_mode_desc)
+                            )
+                        }
+                        SettingsRowDivider()
+                        SettingsFieldSlot {
+                            LabeledTextField(
+                                value = rawCommand.redact(privacyMode),
+                                onValueChange = { if (!privacyMode) { rawCommand = it; fieldsDirty = true } },
+                                labelRes = R.string.raw_mode_field_label,
+                                readOnly = privacyMode,
+                                singleLine = false
                             )
                         }
                     }
