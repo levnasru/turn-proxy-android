@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.5.3](https://github.com/levnasru/turn-proxy-android/compare/v3.5.2...v3.5.3) (2026-08-09)
+
+
+### Fixes
+
+* **clientsetup:** raw-режим импортированного конфига стал редактируемым ([2c2b66c](https://github.com/levnasru/turn-proxy-android/commit/2c2b66c))
+* **hubcard:** supportingRes=0 крашил LabeledTextField ([2c2b66c](https://github.com/levnasru/turn-proxy-android/commit/2c2b66c))
+* **wireguard:** пробрасывать реальное состояние туннеля в UI ([2c2b66c](https://github.com/levnasru/turn-proxy-android/commit/2c2b66c))
+
 ## [3.5.2](https://github.com/samosvalishe/turn-proxy-android/compare/v3.5.1...v3.5.2) (2026-08-04)
 
 
