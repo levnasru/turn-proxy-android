@@ -59,6 +59,10 @@ class CoreProcessController(
     // остывания аллокаций). По умолчанию поднимаем сразу после подключения.
     private val wgWanted = AtomicBoolean(true)
     private val sessionKillScheduled = AtomicBoolean(false)
+    // true между стартом graceful-kill (квота, смена сети) и обработкой exitCode в
+    // finally - ядро после SIGTERM выходит кодом 0 (штатное завершение), а finally без
+    // этого флага принимает 0 за "сессия закончилась" и останавливает сервис вместо рестарта.
+    private val restartInFlight = AtomicBoolean(false)
     private val restartCount = AtomicInteger(0)
     // Single-flight: двойной старт (tile+UI/watchdog) затёр бы первый процесс -> зомби.
     private val startInFlight = AtomicBoolean(false)
@@ -112,11 +116,16 @@ class CoreProcessController(
     }
 
     fun onNetworkHandover() {
-        if (userStopped.get() || process.get() == null) return
+        val proc = process.get()
+        if (userStopped.get() || proc == null) return
         ProxyServiceState.addLog("Смена сети - переподключение")
         notifier.setStatus(context.getString(R.string.notif_proxy_network_change))
         restartCount.set(0)
-        process.get()?.destroyCompat()
+        restartInFlight.set(true)
+        // stopGracefully блокирует до GRACEFUL_STOP_TIMEOUT_MS - на фоновом потоке,
+        // иначе завис бы колбэк NetworkHandoverMonitor. Без этого - SIGKILL,
+        // ядро не успевает отдать TURN-аллокации (Refresh lifetime=0).
+        Thread { proc.stopGracefully(GRACEFUL_STOP_TIMEOUT_MS) }.start()
     }
 
     fun beginShutdown() {
@@ -216,8 +225,9 @@ class CoreProcessController(
             }
             process.set(proc)
             // Stop в окне старта: destroyProcessAndTunnel видел ещё null - убиваем сами.
+            // Уже на Dispatchers.IO (см. withContext выше), блокирующий stopGracefully не страшен.
             if (userStopped.get()) {
-                proc.destroyCompat()
+                proc.stopGracefully(GRACEFUL_STOP_TIMEOUT_MS)
             }
 
             BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
@@ -304,7 +314,11 @@ class CoreProcessController(
                             sessionKillScheduled.set(false)
                             if (!userStopped.get()) {
                                 restartCount.set(0)
-                                process.get()?.destroyCompat()
+                                restartInFlight.set(true)
+                                // Фоновый поток по той же причине, что и onNetworkHandover -
+                                // Handler.postDelayed идёт на главном потоке, stopGracefully блокирует.
+                                val proc = process.get()
+                                Thread { proc?.stopGracefully(GRACEFUL_STOP_TIMEOUT_MS) }.start()
                             }
                         }, 2_000)
                     }
@@ -351,6 +365,10 @@ class CoreProcessController(
                 userStopped.get() -> {
                     ProxyServiceState.setRunning(false)
                     onStopRequested()
+                }
+                restartInFlight.compareAndSet(true, false) -> {
+                    ProxyServiceState.addLog("Сессия сброшена по квоте - переподключение")
+                    scheduleWatchdogRestart()
                 }
                 startupFailed -> {
                     ProxyServiceState.addLog("Ошибка при запуске, watchdog не активирован")
