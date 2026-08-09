@@ -60,6 +60,7 @@ jobs:
     name: Telegram announce
     runs-on: ubuntu-latest
     needs: build-and-publish
+    if: false # приглушено 2026-08-09 по просьбе - убрать условие, чтобы включить обратно
     steps:
       - name: Send release message
         env:
