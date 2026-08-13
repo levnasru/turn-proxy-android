@@ -12,7 +12,16 @@ import com.freeturn.app.R
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.StartupResult
-import com.freeturn.app.domain.proxy.ProxyServiceState
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.RemoteException
+import com.freeturn.app.service.reality.RealityIpc
+import com.freeturn.app.service.reality.RealityState
+import com.freeturn.app.service.reality.realityLogBundle
+import com.freeturn.app.service.reality.toBundle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,6 +69,17 @@ class RealityVpnService : VpnService() {
         }
     }
 
+    private val stateSink = RealityStateSink()
+
+    private val incomingHandler = Handler(Looper.getMainLooper()) { msg ->
+        if (msg.what == RealityIpc.MSG_REGISTER_CLIENT) {
+            msg.replyTo?.let { stateSink.registerClient(it) }
+        }
+        true
+    }
+
+    override fun onBind(intent: Intent?): IBinder = Messenger(incomingHandler).binder
+
     override fun onCreate() {
         super.onCreate()
         serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -94,9 +114,9 @@ class RealityVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
-        ProxyServiceState.setRunning(true)
+        stateSink.setRunning(true)
         acquireWakeLock()
-        ProxyServiceState.addLog("Reality: запуск")
+        stateSink.addLog("Reality: запуск")
         serviceScope.launch { startXray() }
         return START_STICKY
     }
@@ -167,15 +187,15 @@ class RealityVpnService : VpnService() {
             return
         }
 
-        ProxyServiceState.addLog("Reality: туннель поднят")
-        ProxyServiceState.setStartupResult(StartupResult.Success)
+        stateSink.addLog("Reality: туннель поднят")
+        stateSink.setStartupResult(StartupResult.Success)
         // connectionStats.active - число активных TURN-стримов VK-ядра, у Reality
         // такого понятия нет, а LocalProxyManager решает Running/Connecting именно по
         // stats.active > 0 - без этого статус навсегда застревал бы в "Connecting"
         // даже с поднятым туннелем. 1 из 1 - сам туннель как единственный "стрим".
-        ProxyServiceState.setConnectionStats(ConnectionStats(1, 1))
-        ProxyServiceState.setTunnelActive(true)
-        ProxyServiceState.markConnectedIfAbsent(SystemClock.elapsedRealtime())
+        stateSink.setConnectionStats(ConnectionStats(1, 1))
+        stateSink.setTunnelActive(true)
+        stateSink.markConnectedIfAbsent(SystemClock.elapsedRealtime())
         notifier.setStatus(getString(R.string.proxy_active), active = true)
     }
 
@@ -283,9 +303,9 @@ class RealityVpnService : VpnService() {
     }
 
     private fun fail(message: String) {
-        ProxyServiceState.addLog("Reality: $message")
-        ProxyServiceState.setStartupResult(StartupResult.Failed(message))
-        ProxyServiceState.setRunning(false)
+        stateSink.addLog("Reality: $message")
+        stateSink.setStartupResult(StartupResult.Failed(message))
+        stateSink.setRunning(false)
         stopSelf()
     }
 
@@ -326,11 +346,11 @@ class RealityVpnService : VpnService() {
             return
         }
 
-        ProxyServiceState.markTeardownStarted()
-        ProxyServiceState.setRunning(false)
-        ProxyServiceState.setConnectionStats(ConnectionStats.IDLE)
-        ProxyServiceState.clearConnectedSince()
-        ProxyServiceState.addLog("Reality: остановка")
+        stateSink.markTeardownStarted()
+        stateSink.setRunning(false)
+        stateSink.setConnectionStats(ConnectionStats.IDLE)
+        stateSink.clearConnectedSince()
+        stateSink.addLog("Reality: остановка")
 
         // tunFd закрываем ДО stopXray, не после: AndroidTun.Close() (libXray,
         // tun_android.go) - no-op, fd не трогает, им владеем мы. Если stopXray изнутри
@@ -356,7 +376,7 @@ class RealityVpnService : VpnService() {
             }
             runCatching { LibXray.invoke(stopRequest.toString()) }
             runCatching { LibXray.resetDNS() }
-            ProxyServiceState.markTeardownComplete()
+            stateSink.markTeardownComplete()
         }.start()
 
         if (wakeLock?.isHeld == true) wakeLock?.release()
@@ -373,5 +393,100 @@ class RealityVpnService : VpnService() {
         // перехватило единственный слот VpnService).
         stopSelf()
         super.onRevoke()
+    }
+}
+
+/**
+ * Заменяет прямые вызовы ProxyServiceState внутри RealityVpnService: этот сервис
+ * с этого момента живёт в отдельном процессе (:reality, см. AndroidManifest.xml),
+ * у него своя JVM-копия синглтона ProxyServiceState, недоступная основному
+ * процессу. Рассылает состояние подключённым клиентам (RealityStateBridge) через
+ * Messenger вместо прямой записи в общий объект.
+ */
+private class RealityStateSink {
+    private val clients = mutableListOf<Messenger>()
+
+    private var running = false
+    private var active = 0
+    private var total = 0
+    private var failedMessage: String? = null
+    private var tunnelActive = false
+    private var connectedSince: Long? = null
+    private var teardownComplete = true
+
+    private fun currentState() = RealityState(
+        running = running,
+        active = active,
+        total = total,
+        failedMessage = failedMessage,
+        tunnelActive = tunnelActive,
+        connectedSince = connectedSince,
+        teardownComplete = teardownComplete
+    )
+
+    /** Новый клиент подключился - сразу шлём полный снепшот, не только будущие изменения. */
+    fun registerClient(client: Messenger) {
+        clients += client
+        sendTo(client, RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
+    }
+
+    fun setRunning(value: Boolean) {
+        running = value
+        broadcastState()
+    }
+
+    fun setStartupResult(result: StartupResult) {
+        failedMessage = (result as? StartupResult.Failed)?.message
+        broadcastState()
+    }
+
+    fun setConnectionStats(stats: ConnectionStats) {
+        active = stats.active
+        total = stats.total
+        broadcastState()
+    }
+
+    fun setTunnelActive(value: Boolean) {
+        tunnelActive = value
+        broadcastState()
+    }
+
+    fun markConnectedIfAbsent(nowElapsed: Long) {
+        if (connectedSince == null) connectedSince = nowElapsed
+        broadcastState()
+    }
+
+    fun clearConnectedSince() {
+        connectedSince = null
+        broadcastState()
+    }
+
+    fun markTeardownStarted() {
+        teardownComplete = false
+        broadcastState()
+    }
+
+    fun markTeardownComplete() {
+        teardownComplete = true
+        broadcastState()
+    }
+
+    fun addLog(text: String) = broadcastAll(RealityIpc.MSG_LOG_LINE, realityLogBundle(text))
+
+    private fun broadcastState() = broadcastAll(RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
+
+    private fun broadcastAll(what: Int, bundle: android.os.Bundle) {
+        val dead = mutableListOf<Messenger>()
+        for (client in clients) {
+            if (!sendTo(client, what, bundle)) dead += client
+        }
+        clients.removeAll(dead)
+    }
+
+    private fun sendTo(client: Messenger, what: Int, bundle: android.os.Bundle): Boolean = try {
+        client.send(Message.obtain(null, what).apply { data = bundle })
+        true
+    } catch (e: RemoteException) {
+        false
     }
 }
