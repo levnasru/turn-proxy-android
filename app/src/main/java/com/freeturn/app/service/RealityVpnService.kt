@@ -404,7 +404,7 @@ class RealityVpnService : VpnService() {
  * Messenger вместо прямой записи в общий объект.
  */
 private class RealityStateSink {
-    private val clients = mutableListOf<Messenger>()
+    private val clients = java.util.concurrent.CopyOnWriteArrayList<Messenger>()
 
     private var running = false
     private var active = 0
