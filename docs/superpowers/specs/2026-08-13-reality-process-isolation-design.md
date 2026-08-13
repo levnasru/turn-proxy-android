@@ -131,9 +131,15 @@ Android — доставляет `Message` с `Bundle`-полезной нагр
 
 ## Тестирование
 
-- Юнит-тест на маппинг «доменный объект ↔ `Bundle`»
-  (`ConnectionStats`/`StartupResult`/`LogEntry` — чистые функции, туда-
-  обратно, без эмулятора).
+- Проект использует чистый JUnit4 без Robolectric
+  (`app/build.gradle.kts`: только `testImplementation(libs.junit)`, без
+  `testOptions.unitTests.isReturnDefaultValues`). `android.os.Bundle` в
+  таком окружении — заглушка, бросающая исключение на любой вызов
+  (`put*`/`get*`). Юнит-тест на маппинг в `Bundle` технически невозможен
+  без добавления Robolectric — непропорционально задаче, не добавляем
+  (YAGNI). Сам маппинг (`RealityState` ↔ `Bundle`) остаётся плоским и
+  тривиальным (field-by-field), содержательной логики, которую стоило бы
+  отдельно защищать тестом, там нет.
 - Существующий `./gradlew :app:testDebugUnitTest` не должен сломаться.
 - **Основная приёмка — живой повтор сценария, который крашил:**
   пересобрать (`./gradlew :app:assembleDebug`), поставить (`adb install
