@@ -58,8 +58,7 @@ class CoreProcessController(
     // погасить и поднять кнопкой, не пересоздавая TURN-сессию (та стоит ~10 минут
     // остывания аллокаций). По умолчанию поднимаем сразу после подключения.
     private val wgWanted = AtomicBoolean(true)
-    private val sessionKillScheduled = AtomicBoolean(false)
-    // true между стартом graceful-kill (квота, смена сети) и обработкой exitCode в
+    // true между стартом graceful-kill (смена сети) и обработкой exitCode в
     // finally - ядро после SIGTERM выходит кодом 0 (штатное завершение), а finally без
     // этого флага принимает 0 за "сессия закончилась" и останавливает сервис вместо рестарта.
     private val restartInFlight = AtomicBoolean(false)
@@ -306,21 +305,15 @@ class CoreProcessController(
                         }
                     }
 
-                    // compareAndSet гарантирует единственный postDelayed даже при параллельных quota-ошибках
-                    if (events.any { it is CoreLogEvent.QuotaError } &&
-                        sessionKillScheduled.compareAndSet(false, true)) {
-                        ProxyServiceState.addLog("Превышена квота - сброс сессии через 2 с")
-                        handler.postDelayed({
-                            sessionKillScheduled.set(false)
-                            if (!userStopped.get()) {
-                                restartCount.set(0)
-                                restartInFlight.set(true)
-                                // Фоновый поток по той же причине, что и onNetworkHandover -
-                                // Handler.postDelayed идёт на главном потоке, stopGracefully блокирует.
-                                val proc = process.get()
-                                Thread { proc?.stopGracefully(GRACEFUL_STOP_TIMEOUT_MS) }.start()
-                            }
-                        }, 2_000)
+                    // QuotaError больше не убивает процесс: ядро (internal/proxy/udprelay)
+                    // уже переживает нехватку слотов само - каждый стрим ретраит
+                    // независимо с бэкоффом 2с, не трогая остальные. Полный рестарт тут
+                    // раньше был нужен, чтобы обойти утечку аллокаций от SIGKILL
+                    // (destroyForcibly, ~10 мин TTL) - тот баг фиксирован stopGracefully
+                    // (2026-08-05), и с ним рестарт на квоту только рвёт уже рабочие
+                    // стримы вместо того чтобы дать недостающим дотянуться в фоне.
+                    if (events.any { it is CoreLogEvent.QuotaError }) {
+                        ProxyServiceState.addLog("Квота на части стримов - ядро само доберёт недостающие")
                     }
                 }
             }
@@ -367,7 +360,7 @@ class CoreProcessController(
                     onStopRequested()
                 }
                 restartInFlight.compareAndSet(true, false) -> {
-                    ProxyServiceState.addLog("Сессия сброшена по квоте - переподключение")
+                    ProxyServiceState.addLog("Сессия пересоздана после смены сети - переподключение")
                     scheduleWatchdogRestart()
                 }
                 startupFailed -> {

@@ -25,6 +25,13 @@ keystore.properties
 # Нативное ядро - качается таской fetchFreeturnCore из релизов free-turn-proxy
 /app/src/main/jniLibs/
 
+# libXray.aar (96 МБ, gomobile bind над xray-core) - тот же принцип, что и jniLibs:
+# бинарь не в git-истории, качается/кладётся вручную перед сборкой (см. docs/superpowers/specs/2026-08-13-reality-process-isolation-design.md)
+/app/libs/
+
+# graphify (индекс кодовой карты, локальный кэш)
+/graphify-out/
+
 # Claude Code
 .claude/
 CLAUDE.md

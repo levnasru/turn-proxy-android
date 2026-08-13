@@ -53,7 +53,6 @@ import com.freeturn.app.ui.components.SettingsFieldSlot
 import com.freeturn.app.ui.components.SettingsRowDivider
 import com.freeturn.app.ui.theme.Spacing
 import com.freeturn.app.ui.util.redact
-import com.freeturn.app.viewmodel.server.ServerViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -61,16 +60,12 @@ import kotlinx.coroutines.delay
 @Composable
 fun ClientSetupScreen(
     settingsViewModel: SettingsViewModel,
-    serverViewModel: ServerViewModel,
     // null = активный сервер; не-null = конкретный сервер по id (Settings-флоу).
     serverId: String? = null,
     onBack: (() -> Unit)? = null
 ) {
     val snapshot by settingsViewModel.serversSnapshot.collectAsStateWithLifecycle()
     val activeClient by settingsViewModel.clientConfig.collectAsStateWithLifecycle()
-    val sshConfig by serverViewModel.sshConfig.collectAsStateWithLifecycle()
-    val serverState by serverViewModel.serverState.collectAsStateWithLifecycle()
-    val activeProxyListen by settingsViewModel.proxyListen.collectAsStateWithLifecycle()
     val privacyMode by settingsViewModel.privacyMode.collectAsStateWithLifecycle()
 
     // Источник данных: конкретный сервер по id либо активный.
@@ -78,8 +73,6 @@ fun ClientSetupScreen(
     val saved = server?.client ?: activeClient
     // Активный сервер рулит живым рантаймом, неактивный - только хранилищем.
     val isActive = serverId == null || serverId == snapshot.activeId
-    val effSshIp = server?.ssh?.ip ?: sshConfig.ip
-    val effProxyListen = server?.proxyListen ?: activeProxyListen
 
     // Единая точка записи client-конфига: сервер by-id либо активный.
     fun clientEdit(transform: (ClientConfig) -> ClientConfig) {
@@ -90,11 +83,7 @@ fun ClientSetupScreen(
         }
     }
 
-    val serverKnown = serverState as? com.freeturn.app.domain.ServerState.Known
-    // TCP-форвард: реальное состояние из probe (если запущен) или сохранённое.
-    val syncOn = saved.syncServerSwitches
-    val effectiveTcpForward = if (isActive && syncOn && serverKnown?.running == true)
-        serverKnown.tcpMode ?: saved.tcpForward else saved.tcpForward
+    val effectiveTcpForward = saved.tcpForward
 
     val context = LocalContext.current
 
@@ -130,15 +119,6 @@ fun ClientSetupScreen(
         hubPin = saved.hubPin
         hubToken = saved.hubToken
         rawCommand = saved.rawCommand
-    }
-
-    // Автозаполнение адреса сервера из SSH-конфига если поле пустое
-    LaunchedEffect(effSshIp, effProxyListen) {
-        if (serverAddress.isBlank() && effSshIp.isNotBlank()) {
-            val port = effProxyListen.substringAfterLast(":", "56000")
-            serverAddress = "$effSshIp:$port"
-            fieldsDirty = true
-        }
     }
 
     // Авто-сохранение с дебаунсом 600 мс.

@@ -26,6 +26,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.freeturn.app.R
 import com.freeturn.app.data.config.SplitTunnelMode
 import com.freeturn.app.ui.components.HubCacheInjectDialog
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
@@ -44,6 +46,7 @@ import com.freeturn.app.ui.screens.splittunnel.SplitTunnelModal
 import com.freeturn.app.domain.ProxyState
 import com.freeturn.app.viewmodel.proxy.ProxyViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
+import com.freeturn.app.viewmodel.settings.SubscriptionSyncState
 import kotlinx.coroutines.launch
 import com.freeturn.app.ui.theme.Spacing
 
@@ -65,6 +68,7 @@ fun HomeScreen(
     val suppressUpdatePrompt by settingsViewModel.suppressUpdatePrompt.collectAsStateWithLifecycle()
     val privacyMode by settingsViewModel.privacyMode.collectAsStateWithLifecycle()
     val serversSnapshot by settingsViewModel.serversSnapshot.collectAsStateWithLifecycle()
+    val subscriptions by settingsViewModel.subscriptions.collectAsStateWithLifecycle()
 
     RequestStartupPermissions(settingsViewModel)
 
@@ -72,6 +76,29 @@ fun HomeScreen(
     val showInjectCacheDialog = remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // subscriptionSyncState живёт на SettingsViewModel (переживает переключение вкладок),
+    // а обновление подписки запускается кнопкой прямо в ServersSheet этого экрана - без
+    // потребителя здесь Done/Error оставался несъеденным и "стрелял" снэкбаром при первом
+    // же заходе на вкладку "+" (там свой такой же потребитель, см. AddServerScreen.kt).
+    val subscriptionSyncState by settingsViewModel.subscriptionSyncState.collectAsStateWithLifecycle()
+    LaunchedEffect(subscriptionSyncState) {
+        when (val s = subscriptionSyncState) {
+            is SubscriptionSyncState.Done -> {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.subscription_sync_done, s.added, s.updated, s.removed)
+                )
+                settingsViewModel.clearSubscriptionSyncState()
+            }
+            is SubscriptionSyncState.Error -> {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.subscription_sync_error, s.message)
+                )
+                settingsViewModel.clearSubscriptionSyncState()
+            }
+            else -> {}
+        }
+    }
     // Нижний лист серверов (всегда виден).
     val sheetScaffoldState = rememberBottomSheetScaffoldState(
         bottomSheetState = rememberBottomSheetState(
@@ -103,7 +130,9 @@ fun HomeScreen(
     }
 
     fun startProxyWithTunnel() {
-        if (clientConfig.wireGuardActive) {
+        // RealityVpnService - тоже VpnService (см. AndroidProxyServiceLauncher) и без
+        // предварительного prepare() establish() в нём молча возвращает null.
+        if (clientConfig.wireGuardActive || clientConfig.realityActive) {
             withVpnPermission { proxyViewModel.startProxy() }
             return
         }
@@ -139,6 +168,7 @@ fun HomeScreen(
             sheetContent = {
                 ServersSheetContent(
                     snapshot = serversSnapshot,
+                    subscriptions = subscriptions,
                     privacyMode = privacyMode,
                     callLink = clientConfig.vkLink,
                     // Правка ссылки только пока прокси стоит (новая комната = реконнект).
@@ -152,7 +182,8 @@ fun HomeScreen(
                         scope.launch { sheetScaffoldState.bottomSheetState.partialExpand() }
                         onOpenServerSettings(id)
                     },
-                    onSaveCallLink = { settingsViewModel.setActiveVkLink(it) }
+                    onSaveCallLink = { settingsViewModel.setActiveVkLink(it) },
+                    onRefreshSubscription = { settingsViewModel.refreshSubscription(it) }
                 )
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }

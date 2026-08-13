@@ -105,11 +105,13 @@ composeCompiler {
 
 dependencies {
     implementation(libs.androidx.core.splashscreen)
-    implementation(libs.jsch)
     implementation(libs.bouncycastle)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.wireguard.tunnel)
+    // libXray.aar - официальная обёртка XTLS/libXray над xray-core (gomobile bind),
+    // прибит локально (не в Maven). REALITY-режим (см. TunnelTransport.REALITY).
+    implementation(files("libs/libXray.aar"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

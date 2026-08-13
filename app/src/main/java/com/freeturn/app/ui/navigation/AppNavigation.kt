@@ -50,7 +50,6 @@ import com.freeturn.app.ui.screens.captcha.CaptchaWebViewDialog
 import com.freeturn.app.ui.screens.share.ImportSheet
 import com.freeturn.app.ui.theme.LocalReducedMotion
 import com.freeturn.app.viewmodel.proxy.ProxyViewModel
-import com.freeturn.app.viewmodel.server.ServerViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -65,8 +64,7 @@ private const val NAV_FADE_OUT_MS = 120
 @Composable
 fun AppNavigation(
     settingsViewModel: SettingsViewModel = koinViewModel(),
-    proxyViewModel: ProxyViewModel = koinViewModel(),
-    serverViewModel: ServerViewModel = koinViewModel()
+    proxyViewModel: ProxyViewModel = koinViewModel()
 ) {
     val isInitialized by settingsViewModel.isInitialized.collectAsStateWithLifecycle()
 
@@ -147,8 +145,7 @@ fun AppNavigation(
         AppNavHost(
             navController = navController,
             settingsViewModel = settingsViewModel,
-            proxyViewModel = proxyViewModel,
-            serverViewModel = serverViewModel
+            proxyViewModel = proxyViewModel
         )
     }
 
@@ -189,8 +186,7 @@ fun AppNavigation(
 private fun AppNavHost(
     navController: NavHostController,
     settingsViewModel: SettingsViewModel,
-    proxyViewModel: ProxyViewModel,
-    serverViewModel: ServerViewModel
+    proxyViewModel: ProxyViewModel
 ) {
     // Системная настройка reduced motion отключает shared-axis переходы.
     val reducedMotion = LocalReducedMotion.current
@@ -233,14 +229,13 @@ private fun AppNavHost(
     ) {
         homeGraph(navController, settingsViewModel, proxyViewModel)
         logsGraph(proxyViewModel)
-        shareGraph(navController)
         addGraph(navController, settingsViewModel)
-        settingsGraph(navController, settingsViewModel, proxyViewModel, serverViewModel)
+        settingsGraph(navController, settingsViewModel, proxyViewModel)
     }
 }
 
 private val tabOrder = listOf(
-    HomeGraph::class, LogsGraph::class, ShareGraph::class, SettingsGraph::class, AddGraph::class
+    HomeGraph::class, LogsGraph::class, SettingsGraph::class, AddGraph::class
 )
 
 private fun NavDestination.tabRank(): Int? =
@@ -287,7 +282,6 @@ private val logsNavItem =
 
 private val navItems = listOf(
     NavItem(HomeGraph, Home, R.string.nav_home, R.drawable.home_24px, R.drawable.home_outlined_24px),
-    NavItem(ShareGraph, Share, R.string.nav_share, R.drawable.share_24px, R.drawable.share_outlined_24px),
     NavItem(SettingsGraph, Settings, R.string.nav_settings, R.drawable.settings_24px, R.drawable.settings_outlined_24px),
     NavItem(AddGraph, AddServer, R.string.nav_add, R.drawable.add_24px, R.drawable.add_24px)
 )

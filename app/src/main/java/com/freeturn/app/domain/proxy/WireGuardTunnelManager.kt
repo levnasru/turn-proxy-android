@@ -41,6 +41,7 @@ class WireGuardTunnelManager(context: Context) {
         val preparedConfig = rawConfig
             .withLocalEndpoint(endpoint)
             .withMtu(ClientConfig.WG_MTU)
+            .withLanBypass()
             .withSplitTunnel(
                 appPackage = appContext.packageName,
                 mode = cfg.splitTunnelMode,
@@ -138,6 +139,104 @@ private fun String.withMtu(mtu: Int): String {
     if (interfaceIndex < 0) return lines.joinToString("\n")
     lines.add(interfaceIndex + 1, "MTU = $mtu")
     return lines.joinToString("\n")
+}
+
+// RFC1918 + link-local + loopback - локальная сеть (принтер, NAS, роутер, "умный дом")
+// остаётся доступна поверх поднятого WG, вместо того чтобы тоже маршрутизироваться в туннель.
+// IPv6-часть AllowedIPs не трогаем - LAN-устройства почти всегда IPv4, а вычитание диапазонов
+// в 128-битном пространстве overkill для этой задачи (см. WgLanBypassTest, поведение
+// зафиксировано assert-ами: приватные диапазоны исключены, IPv6-записи проходят как есть).
+private val PRIVATE_IPV4_CIDRS = listOf(
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8"
+)
+
+private fun String.withLanBypass(): String {
+    var inPeer = false
+    val lines = lineSequence().map { line ->
+        val section = line.trim()
+        if (section.startsWith("[") && section.endsWith("]")) {
+            inPeer = section.equals("[Peer]", ignoreCase = true)
+        }
+        if (inPeer && section.startsWith("AllowedIPs", ignoreCase = true) && section.contains("=")) {
+            "AllowedIPs = ${excludeLanFromAllowedIps(section.substringAfter("=").trim())}"
+        } else {
+            line
+        }
+    }.toList()
+    return lines.joinToString("\n")
+}
+
+internal fun excludeLanFromAllowedIps(value: String): String {
+    val entries = value.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    val ipv6 = entries.filter { it.contains(":") }
+    val ipv4Ranges = entries.filterNot { it.contains(":") }.mapNotNull(::cidrToRange)
+    if (ipv4Ranges.isEmpty()) return value
+
+    val privateRanges = PRIVATE_IPV4_CIDRS.mapNotNull(::cidrToRange)
+    val remaining = subtractRanges(mergeRanges(ipv4Ranges), mergeRanges(privateRanges))
+    val ipv4Cidrs = remaining.flatMap { rangeToCidrs(it.first, it.last) }
+
+    return (ipv4Cidrs + ipv6).joinToString(", ")
+}
+
+private fun cidrToRange(cidr: String): LongRange? {
+    val parts = cidr.split("/")
+    if (parts.size != 2) return null
+    val octets = parts[0].split(".").map { it.toIntOrNull() ?: return null }
+    if (octets.size != 4 || octets.any { it !in 0..255 }) return null
+    val prefix = parts[1].toIntOrNull() ?: return null
+    if (prefix !in 0..32) return null
+    val base = octets.fold(0L) { acc, o -> (acc shl 8) or o.toLong() }
+    val hostBits = 32 - prefix
+    val mask = if (hostBits == 0) 0L else (1L shl hostBits) - 1
+    val start = base and mask.inv() and 0xFFFFFFFFL
+    return start..(start or mask)
+}
+
+private fun rangeToCidrs(start: Long, end: Long): List<String> {
+    val result = mutableListOf<String>()
+    var s = start
+    while (s <= end) {
+        val alignBits = if (s == 0L) 32 else java.lang.Long.numberOfTrailingZeros(s).coerceAtMost(32)
+        val remaining = end - s + 1
+        val fitBits = 63 - java.lang.Long.numberOfLeadingZeros(remaining)
+        val hostBits = minOf(alignBits, fitBits)
+        val prefix = 32 - hostBits
+        result += "${(s shr 24) and 0xFF}.${(s shr 16) and 0xFF}.${(s shr 8) and 0xFF}.${s and 0xFF}/$prefix"
+        s += (1L shl hostBits)
+    }
+    return result
+}
+
+private fun mergeRanges(ranges: List<LongRange>): List<LongRange> {
+    if (ranges.isEmpty()) return emptyList()
+    val sorted = ranges.sortedBy { it.first }
+    val merged = mutableListOf(sorted.first())
+    for (r in sorted.drop(1)) {
+        val last = merged.last()
+        if (r.first <= last.last + 1) merged[merged.lastIndex] = last.first..maxOf(last.last, r.last)
+        else merged += r
+    }
+    return merged
+}
+
+// Вычитание из объединения диапазонов [allowed] объединения диапазонов [excluded] -
+// стандартный interval subtraction, оба списка уже смёрджены/отсортированы.
+private fun subtractRanges(allowed: List<LongRange>, excluded: List<LongRange>): List<LongRange> {
+    var current = allowed
+    for (ex in excluded) {
+        val next = mutableListOf<LongRange>()
+        for (r in current) {
+            if (ex.last < r.first || ex.first > r.last) {
+                next += r
+                continue
+            }
+            if (ex.first > r.first) next += r.first..(ex.first - 1)
+            if (ex.last < r.last) next += (ex.last + 1)..r.last
+        }
+        current = next
+    }
+    return current
 }
 
 private fun String.withSplitTunnel(

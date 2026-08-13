@@ -14,8 +14,18 @@ import kotlinx.coroutines.launch
 
 /**
  * Следит за сменой ФИЗИЧЕСКОЙ сети (Wi-Fi <-> LTE и т.п.) и дёргает [onHandover].
- * VPN-интерфейсы отфильтрованы: иначе старт WireGuard выглядел бы как смена сети
- * и уводил прокси в бесконечный рестарт.
+ * VPN-интерфейсы отфильтрованы в физическом мониторе: иначе старт WireGuard
+ * выглядел бы как смена сети и уводил прокси в бесконечный рестарт.
+ *
+ * Отдельно следит за default-маршрутом ([registerDefaultNetworkCallback]) - той
+ * сетью, которую реально использует НЕсвязанный сокет нашего процесса (то есть
+ * DTLS/UDP-сессия ядра к TURN-relay). Физический монитор ЭТУ смену не видит:
+ * когда СТОРОННЕЕ VPN-приложение забирает/отдаёт системный VPN-слот, физическая
+ * сеть (тот же Wi-Fi/интерфейс) не меняется вообще - меняется только маршрут по
+ * умолчанию для приложений её не исключивших. Без этого второго монитора ядро
+ * после переключения на чужой VPN и обратно остаётся с мёртвой UDP-сессией,
+ * которую ничто не толкает на переподключение (WG-туннель к 127.0.0.1 поднимается
+ * штатно - это чисто локальный хендшейк, трафика за ним просто нет).
  */
 class NetworkHandoverMonitor(
     private val context: Context,
@@ -30,8 +40,11 @@ class NetworkHandoverMonitor(
 
     private val cm get() = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private var callback: ConnectivityManager.NetworkCallback? = null
+    private var defaultCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var debounceJob: Job? = null
     @Volatile private var lastKey: String? = null
+    @Volatile private var defaultDebounceJob: Job? = null
+    @Volatile private var lastDefaultNetwork: Network? = null
 
     fun register() {
         val cm = cm
@@ -89,6 +102,41 @@ class NetworkHandoverMonitor(
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
         cm.registerNetworkCallback(request, cb)
+
+        lastDefaultNetwork = cm.activeNetwork
+        fun scheduleDefaultCheck(network: Network?, reason: String) {
+            if (SystemClock.elapsedRealtime() - registeredAt < WARMUP_MS) return
+            
+            // Фильтруем сам VPN из default-маршрута
+            val caps = network?.let { cm.getNetworkCapabilities(it) }
+            if (caps != null && (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
+                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN))) {
+                ProxyServiceState.addLog("Сеть: маршрут по умолчанию (VPN) проигнорирован")
+                return
+            }
+
+            defaultDebounceJob?.cancel()
+            defaultDebounceJob = scope.launch {
+                delay(2_000)
+                // onLost даёт null - если следом быстро придёт onAvailable с новой сетью
+                // (обычный переход между VPN), он отменит эту job и запустит свою -
+                // итоговый рестарт будет один на реальный переход, не два подряд.
+                if (network == lastDefaultNetwork) return@launch
+                lastDefaultNetwork = network
+                if (network == null) {
+                    ProxyServiceState.addLog("Сеть: маршрут по умолчанию недоступен ($reason)")
+                    return@launch
+                }
+                ProxyServiceState.addLog("Сеть: маршрут по умолчанию сменился ($reason)")
+                onHandover()
+            }
+        }
+        val defaultCb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = scheduleDefaultCheck(network, "default-available")
+            override fun onLost(network: Network) = scheduleDefaultCheck(null, "default-lost")
+        }
+        defaultCallback = defaultCb
+        cm.registerDefaultNetworkCallback(defaultCb)
     }
 
     fun unregister() {
@@ -98,6 +146,12 @@ class NetworkHandoverMonitor(
             } catch (_: Exception) {}
         }
         callback = null
+        defaultCallback?.let { cb ->
+            try {
+                cm.unregisterNetworkCallback(cb)
+            } catch (_: Exception) {}
+        }
+        defaultCallback = null
     }
 
     /**

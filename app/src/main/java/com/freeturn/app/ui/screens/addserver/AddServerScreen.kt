@@ -51,6 +51,8 @@ import com.freeturn.app.ui.components.SettingsGroupItem
 import com.freeturn.app.ui.screens.settings.backupEventMessage
 import com.freeturn.app.ui.theme.Spacing
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
+import com.freeturn.app.viewmodel.settings.SubscriptionSyncState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -64,12 +66,12 @@ import org.koin.compose.koinInject
 @Composable
 fun AddServerScreen(
     settingsViewModel: SettingsViewModel,
-    onSelfHosted: () -> Unit,
     onManualCreate: (String) -> Unit,
     onScanQr: () -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showManualDialog by rememberSaveable { mutableStateOf(false) }
+    var showSubscriptionDialog by rememberSaveable { mutableStateOf(false) }
     var showRestoreDialog by rememberSaveable { mutableStateOf(false) }
     var restoreUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
@@ -91,6 +93,25 @@ fun AddServerScreen(
     LaunchedEffect(Unit) {
         settingsViewModel.backupEvents.collect { event ->
             snackbarHostState.showSnackbar(backupEventMessage(context, event))
+        }
+    }
+
+    val subscriptionSyncState by settingsViewModel.subscriptionSyncState.collectAsStateWithLifecycle()
+    LaunchedEffect(subscriptionSyncState) {
+        when (val s = subscriptionSyncState) {
+            is SubscriptionSyncState.Done -> {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.subscription_sync_done, s.added, s.updated, s.removed)
+                )
+                settingsViewModel.clearSubscriptionSyncState()
+            }
+            is SubscriptionSyncState.Error -> {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.subscription_sync_error, s.message)
+                )
+                settingsViewModel.clearSubscriptionSyncState()
+            }
+            else -> {}
         }
     }
 
@@ -139,18 +160,18 @@ fun AddServerScreen(
                 SettingsGroup {
                     SettingsGroupItem(0, 4) {
                         SettingsEntryRow(
-                            iconRes = R.drawable.host_24px,
-                            title = stringResource(R.string.add_self_hosted_title),
-                            subtitle = stringResource(R.string.add_self_hosted_desc),
-                            onClick = onSelfHosted
-                        )
-                    }
-                    SettingsGroupItem(1, 4) {
-                        SettingsEntryRow(
                             iconRes = R.drawable.tune_24px,
                             title = stringResource(R.string.add_manual_title),
                             subtitle = stringResource(R.string.add_manual_desc),
                             onClick = { showManualDialog = true }
+                        )
+                    }
+                    SettingsGroupItem(1, 4) {
+                        SettingsEntryRow(
+                            iconRes = R.drawable.cloud_download_24px,
+                            title = stringResource(R.string.add_subscription_title),
+                            subtitle = stringResource(R.string.add_subscription_desc),
+                            onClick = { showSubscriptionDialog = true }
                         )
                     }
                     SettingsGroupItem(2, 4) {
@@ -172,6 +193,16 @@ fun AddServerScreen(
                 }
             }
         }
+    }
+
+    if (showSubscriptionDialog) {
+        AddSubscriptionDialog(
+            onCreate = { name, url ->
+                showSubscriptionDialog = false
+                settingsViewModel.addSubscription(name, url)
+            },
+            onDismiss = { showSubscriptionDialog = false }
+        )
     }
 
     if (showManualDialog) {

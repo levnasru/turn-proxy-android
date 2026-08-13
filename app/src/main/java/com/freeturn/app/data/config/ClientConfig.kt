@@ -23,6 +23,13 @@ data class ClientConfig(
     val tunnelTransport: String = TunnelTransport.NONE,
     val wireGuardConfig: String = "",
     val wireGuardTunnelName: String = TunnelTransport.DEFAULT_TUNNEL_NAME,
+    /**
+     * Сырой Xray-core JSON (vless+xhttp+reality и т.п.) для TunnelTransport.REALITY -
+     * тот же формат, что и десктопный v2ray/Xray конфиг, копируется как есть, меняется
+     * только users[].id на человека. tun-инбаунд обязателен (см. RealityVpnService,
+     * который дописывает env.xray.tun.fd перед запуском).
+     */
+    val xrayConfig: String = "",
     val splitTunnelMode: String = SplitTunnelMode.EXCLUDE,
     /**
      * Package-имена для include/exclude (разделители: запятая/пробел/перенос строки).
@@ -42,6 +49,9 @@ data class ClientConfig(
 ) {
     val wireGuardActive: Boolean
         get() = tunnelTransport == TunnelTransport.WIREGUARD && wireGuardConfig.isNotBlank()
+
+    val realityActive: Boolean
+        get() = tunnelTransport == TunnelTransport.REALITY && xrayConfig.isNotBlank()
 
     val hubMode: Boolean get() = provider == Provider.HUB
 

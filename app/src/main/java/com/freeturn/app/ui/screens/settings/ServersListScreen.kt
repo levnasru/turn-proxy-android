@@ -106,12 +106,7 @@ private fun ServerListRow(
     shape: Shape,
     onClick: () -> Unit
 ) {
-    // Подзаголовок: адрес сервера + метка "SSH", если сопряжение настроено. Сам SSH-ip
-    // в списке не показываем - достаточно факта наличия.
-    val sub = listOfNotNull(
-        server.client.serverAddress.takeIf { it.isNotBlank() }?.redact(privacyMode),
-        stringResource(R.string.server_has_ssh).takeIf { server.ssh.ip.isNotBlank() }
-    ).joinToString(" · ").ifBlank { "-" }
+    val sub = server.client.serverAddress.takeIf { it.isNotBlank() }?.redact(privacyMode) ?: "-"
     ServerRow(
         name = server.name,
         subtitle = sub,

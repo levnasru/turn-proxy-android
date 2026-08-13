@@ -2,7 +2,7 @@
 // ImageProxy.image помечен @ExperimentalGetImage - стандартный путь для ML Kit-анализатора.
 @file:androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 
-package com.freeturn.app.ui.screens.share
+package com.freeturn.app.ui.screens.addserver
 
 import android.Manifest
 import android.app.Activity

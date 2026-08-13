@@ -5,7 +5,6 @@ import com.freeturn.app.data.config.DnsMode
 import com.freeturn.app.data.config.ObfProfile
 import com.freeturn.app.data.config.Provider
 import com.freeturn.app.data.config.SplitTunnelMode
-import com.freeturn.app.data.config.SshConfig
 import com.freeturn.app.data.config.TunnelTransport
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,17 +31,6 @@ internal object ServerJson {
     private fun encode(p: Server): JSONObject = JSONObject().apply {
         put("id", p.id)
         put("name", p.name)
-        put("ssh", JSONObject().apply {
-            put("ip", p.ssh.ip)
-            put("port", p.ssh.port)
-            put("username", p.ssh.username)
-            put("password", p.ssh.password)
-            put("authType", p.ssh.authType)
-            put("sshKey", p.ssh.sshKey)
-            put("hostFingerprint", p.ssh.hostFingerprint)
-            put("rootMode", p.ssh.rootMode)
-            put("sudoPassword", p.ssh.sudoPassword)
-        })
         put("client", JSONObject().apply {
             put("serverAddress", p.client.serverAddress)
             put("vkLink", p.client.vkLink)
@@ -67,6 +55,7 @@ internal object ServerJson {
             put("tunnelTransport", p.client.tunnelTransport)
             put("wireGuardConfig", p.client.wireGuardConfig)
             put("wireGuardTunnelName", p.client.wireGuardTunnelName)
+            put("xrayConfig", p.client.xrayConfig)
             put("splitTunnelMode", p.client.splitTunnelMode)
             put("splitTunnelApps", p.client.splitTunnelApps)
             put("logsEnabled", p.client.logsEnabled)
@@ -82,26 +71,16 @@ internal object ServerJson {
             put("obfProfile", p.opts.obfProfile)
             put("obfKey", p.opts.obfKey)
         })
+        put("subscriptionId", p.subscriptionId)
+        put("subscriptionNodeKey", p.subscriptionNodeKey)
     }
 
     private fun decode(o: JSONObject): Server {
-        val sshO = o.optJSONObject("ssh") ?: JSONObject()
         val cliO = o.optJSONObject("client") ?: JSONObject()
         val optsO = o.optJSONObject("opts") ?: JSONObject()
         return Server(
             id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
             name = o.optString("name").ifBlank { Server.FALLBACK_NAME },
-            ssh = SshConfig(
-                ip = sshO.optString("ip"),
-                port = sshO.optInt("port", 22),
-                username = sshO.optString("username", "root"),
-                password = sshO.optString("password"),
-                authType = sshO.optString("authType", SshConfig.AUTH_PASSWORD),
-                sshKey = sshO.optString("sshKey"),
-                hostFingerprint = sshO.optString("hostFingerprint"),
-                rootMode = sshO.optString("rootMode", SshConfig.ROOT),
-                sudoPassword = sshO.optString("sudoPassword")
-            ),
             client = ClientConfig(
                 serverAddress = cliO.optString("serverAddress"),
                 vkLink = cliO.optString("vkLink"),
@@ -133,6 +112,7 @@ internal object ServerJson {
                 },
                 wireGuardConfig = cliO.optString("wireGuardConfig"),
                 wireGuardTunnelName = cliO.optString("wireGuardTunnelName").ifBlank { TunnelTransport.DEFAULT_TUNNEL_NAME },
+                xrayConfig = cliO.optString("xrayConfig"),
                 splitTunnelMode = cliO.optString("splitTunnelMode", SplitTunnelMode.EXCLUDE).let {
                     if (it in SplitTunnelMode.VALUES) it else SplitTunnelMode.EXCLUDE
                 },
@@ -151,7 +131,9 @@ internal object ServerJson {
                     if (it in ObfProfile.VALUES) it else ObfProfile.NONE
                 },
                 obfKey = optsO.optString("obfKey", "")
-            )
+            ),
+            subscriptionId = o.optString("subscriptionId"),
+            subscriptionNodeKey = o.optString("subscriptionNodeKey")
         )
     }
 }

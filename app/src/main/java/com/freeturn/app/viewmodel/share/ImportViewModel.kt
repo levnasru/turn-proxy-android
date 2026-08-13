@@ -8,7 +8,6 @@ import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.ObfProfile
 import com.freeturn.app.data.server.Server
 import com.freeturn.app.data.server.ServerOpts
-import com.freeturn.app.data.config.SshConfig
 import com.freeturn.app.data.config.TunnelTransport
 import com.freeturn.app.data.share.FreeturnLink
 import com.freeturn.app.domain.share.LinkImportBus
@@ -115,7 +114,6 @@ class ImportViewModel(
         val wgConf = link.wgConf.trim()
         return Server(
             name = st.serverName.trim().ifBlank { fallbackName },
-            ssh = SshConfig(),
             client = ClientConfig(
                 serverAddress = link.peer,
                 vkLink = st.vkLink.trim(),

@@ -4,7 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object HomeGraph
 @Serializable data object LogsGraph
-@Serializable data object ShareGraph
 @Serializable data object AddGraph
 @Serializable data object SettingsGraph
 
@@ -12,10 +11,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object Logs
 
-@Serializable data object Share
-
 @Serializable data object AddServer
-@Serializable data object SelfHostedSetup
 @Serializable data object QrScanner
 
 @Serializable data object Settings
@@ -23,9 +19,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object About
 @Serializable data object Advanced
 @Serializable data object ServersList
-@Serializable data object SshSetup
 @Serializable data class ServerDetail(val serverId: String)
 @Serializable data class ConnectionMode(val serverId: String)
 @Serializable data class ClientSetup(val serverId: String)
-@Serializable data class ServerManagement(val serverId: String)
 @Serializable data class NerdInfo(val serverId: String)

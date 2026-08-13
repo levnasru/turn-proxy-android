@@ -47,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -57,7 +58,11 @@ import androidx.compose.ui.unit.dp
 import com.freeturn.app.R
 import com.freeturn.app.data.HapticUtil
 import com.freeturn.app.data.config.Provider
+import com.freeturn.app.data.config.TunnelTransport
+import com.freeturn.app.data.server.Server
 import com.freeturn.app.data.server.ServersSnapshot
+import com.freeturn.app.data.server.Subscription
+import com.freeturn.app.ui.components.SectionLabel
 import com.freeturn.app.ui.components.ServerRow
 import com.freeturn.app.ui.components.settingsItemShape
 import com.freeturn.app.ui.util.pasteFromClipboard
@@ -67,13 +72,15 @@ import com.freeturn.app.ui.theme.Spacing
 @Composable
 internal fun ServersSheetContent(
     snapshot: ServersSnapshot,
+    subscriptions: List<Subscription> = emptyList(),
     privacyMode: Boolean = false,
     callLink: String = "",
     // Прокси запущен - правку ссылки на звонок блокируем (новая комната = реконнект).
     callLinkLocked: Boolean = false,
     onApplyServer: (String) -> Unit = {},
     onOpenServerSettings: (String) -> Unit = {},
-    onSaveCallLink: (String) -> Unit = {}
+    onSaveCallLink: (String) -> Unit = {},
+    onRefreshSubscription: (String) -> Unit = {}
 ) {
     val active = snapshot.active
     // Менять ссылку можно только у сохранённого активного сервера и пока прокси стоит.
@@ -108,10 +115,7 @@ internal fun ServersSheetContent(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
-            val sub = active?.let {
-                (it.client.serverAddress.takeIf { a -> a.isNotBlank() }
-                    ?: it.ssh.ip.takeIf { a -> a.isNotBlank() })?.redact(privacyMode)
-            }
+            val sub = active?.client?.serverAddress?.takeIf { it.isNotBlank() }?.redact(privacyMode)
             Spacer(Modifier.height(4.dp))
             Text(
                 sub.orEmpty(),
@@ -139,6 +143,15 @@ internal fun ServersSheetContent(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = Spacing.xxl, end = Spacing.lg, bottom = Spacing.sm)
         )
+
+        // VK-TURN - плоская группа, как раньше. Xray делится на подгруппы по подписке
+        // (Server.subscriptionId), плюс "Личные" - для вручную вставленных конфигов
+        // без подписки. Порядок подгрупп внутри Xray - как в списке подписок.
+        val vkTurnServers = snapshot.list.filter { it.client.tunnelTransport != TunnelTransport.REALITY }
+        val xrayServers = snapshot.list.filter { it.client.tunnelTransport == TunnelTransport.REALITY }
+        val bySubscription = xrayServers.filter { it.subscriptionId.isNotBlank() }.groupBy { it.subscriptionId }
+        val manualXray = xrayServers.filter { it.subscriptionId.isBlank() }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -146,30 +159,60 @@ internal fun ServersSheetContent(
             contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.xs),
             verticalArrangement = Arrangement.spacedBy(Spacing.xxs)
         ) {
-            itemsIndexed(snapshot.list, key = { _, p -> p.id }) { index, p ->
-                val isActive = snapshot.activeId == p.id
-                val sub = listOfNotNull(
-                    p.client.serverAddress.takeIf { it.isNotBlank() }?.redact(privacyMode),
-                    p.ssh.ip.takeIf { it.isNotBlank() }?.let { "SSH ${it.redact(privacyMode)}" }
-                ).joinToString(" · ").ifBlank { "-" }
-                ServerRow(
-                    name = p.name,
-                    subtitle = sub,
-                    isActive = isActive,
-                    shape = settingsItemShape(index, snapshot.list.size),
-                    inactiveContainer = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    onClick = { if (!isActive) onApplyServer(p.id) },
-                    trailing = {
-                        IconButton(onClick = { onOpenServerSettings(p.id) }) {
-                            Icon(
-                                painterResource(R.drawable.settings_outlined_24px),
-                                contentDescription = stringResource(R.string.nav_settings),
-                                tint = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+            if (vkTurnServers.isNotEmpty()) {
+                item(key = "group_vk_turn") {
+                    SectionLabel(stringResource(R.string.server_group_vk_turn))
+                }
+                itemsIndexed(vkTurnServers, key = { _, p -> p.id }) { index, p ->
+                    ServerRowItem(
+                        server = p,
+                        isActive = snapshot.activeId == p.id,
+                        shape = settingsItemShape(index, vkTurnServers.size),
+                        privacyMode = privacyMode,
+                        onClick = onApplyServer,
+                        onSettingsClick = onOpenServerSettings
+                    )
+                }
+            }
+
+            if (xrayServers.isNotEmpty()) {
+                item(key = "group_xray") {
+                    SectionLabel(stringResource(R.string.server_group_xray))
+                }
+                subscriptions.filter { it.id in bySubscription }.forEach { subscription ->
+                    val group = bySubscription.getValue(subscription.id)
+                    item(key = "sub_${subscription.id}") {
+                        SubscriptionSubheader(
+                            name = subscription.name,
+                            onRefresh = { onRefreshSubscription(subscription.id) }
+                        )
                     }
-                )
+                    itemsIndexed(group, key = { _, p -> p.id }) { index, p ->
+                        ServerRowItem(
+                            server = p,
+                            isActive = snapshot.activeId == p.id,
+                            shape = settingsItemShape(index, group.size),
+                            privacyMode = privacyMode,
+                            onClick = onApplyServer,
+                            onSettingsClick = onOpenServerSettings
+                        )
+                    }
+                }
+                if (manualXray.isNotEmpty()) {
+                    item(key = "sub_manual") {
+                        SubscriptionSubheader(name = stringResource(R.string.subscription_group_manual))
+                    }
+                    itemsIndexed(manualXray, key = { _, p -> p.id }) { index, p ->
+                        ServerRowItem(
+                            server = p,
+                            isActive = snapshot.activeId == p.id,
+                            shape = settingsItemShape(index, manualXray.size),
+                            privacyMode = privacyMode,
+                            onClick = onApplyServer,
+                            onSettingsClick = onOpenServerSettings
+                        )
+                    }
+                }
             }
         }
     }
@@ -180,6 +223,65 @@ internal fun ServersSheetContent(
             onSave = { showCallLinkDialog = false; onSaveCallLink(it) },
             onDismiss = { showCallLinkDialog = false }
         )
+    }
+}
+
+@Composable
+private fun ServerRowItem(
+    server: Server,
+    isActive: Boolean,
+    shape: Shape,
+    privacyMode: Boolean,
+    onClick: (String) -> Unit,
+    onSettingsClick: (String) -> Unit
+) {
+    val sub = server.client.serverAddress.takeIf { it.isNotBlank() }?.redact(privacyMode) ?: "-"
+    ServerRow(
+        name = server.name,
+        subtitle = sub,
+        isActive = isActive,
+        shape = shape,
+        inactiveContainer = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = { if (!isActive) onClick(server.id) },
+        trailing = {
+            IconButton(onClick = { onSettingsClick(server.id) }) {
+                Icon(
+                    painterResource(R.drawable.settings_outlined_24px),
+                    contentDescription = stringResource(R.string.nav_settings),
+                    tint = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
+}
+
+/** Заголовок подгруппы внутри Xray (имя подписки или "Личные") с опциональным обновлением. */
+@Composable
+private fun SubscriptionSubheader(name: String, onRefresh: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = Spacing.md, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            name,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (onRefresh != null) {
+            IconButton(onClick = onRefresh) {
+                Icon(
+                    painterResource(R.drawable.cloud_download_24px),
+                    contentDescription = stringResource(R.string.subscription_refresh),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
