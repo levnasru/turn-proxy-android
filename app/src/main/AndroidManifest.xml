@@ -104,6 +104,7 @@
         <service
             android:name=".service.RealityVpnService"
             android:exported="false"
+            android:process=":reality"
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE"
             tools:targetApi="29">
