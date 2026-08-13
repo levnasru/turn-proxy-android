@@ -9,6 +9,7 @@ import com.freeturn.app.domain.proxy.LocalProxyManager
 import com.freeturn.app.domain.proxy.ProxyOrchestrator
 import com.freeturn.app.domain.proxy.ProxyServiceLauncher
 import com.freeturn.app.service.AndroidProxyServiceLauncher
+import com.freeturn.app.service.reality.RealityStateBridge
 import com.freeturn.app.viewmodel.share.ImportViewModel
 import com.freeturn.app.viewmodel.proxy.ProxyViewModel
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
@@ -18,7 +19,8 @@ import org.koin.dsl.module
 
 val appModule = module {
     single { AppPreferences(androidContext()) }
-    single<ProxyServiceLauncher> { AndroidProxyServiceLauncher(androidContext(), get()) }
+    single { RealityStateBridge(androidContext()) }
+    single<ProxyServiceLauncher> { AndroidProxyServiceLauncher(androidContext(), get(), get()) }
     single { LocalProxyManager(get()) }
     single { AppUpdater(androidContext()) }
     single { BackupManager(get()) }

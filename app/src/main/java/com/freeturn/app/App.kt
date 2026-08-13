@@ -5,6 +5,7 @@ import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.di.appModule
 import com.freeturn.app.domain.proxy.ProxyServiceState
 import com.freeturn.app.service.ProxyWidgetProvider
+import com.freeturn.app.service.reality.RealityStateBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,6 +21,7 @@ import org.koin.core.context.startKoin
 class App : Application() {
 
     private val appPreferences: AppPreferences by inject()
+    private val realityStateBridge: RealityStateBridge by inject()
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     override fun onCreate() {
@@ -31,6 +33,10 @@ class App : Application() {
             modules(appModule)
         }
         observeWidgetState()
+        // Если Reality-туннель уже работал в фоне (процесс :reality пережил
+        // пересоздание основного процесса), подключаемся к нему сразу, а не
+        // ждём следующего нажатия "подключиться".
+        realityStateBridge.bind()
     }
 
     // Перерисовывает виджет при смене статуса прокси или активного сервера

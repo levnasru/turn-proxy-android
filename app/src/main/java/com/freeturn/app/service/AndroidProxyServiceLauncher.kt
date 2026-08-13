@@ -6,6 +6,7 @@ import android.os.Build
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.data.config.TunnelTransport
 import com.freeturn.app.domain.proxy.ProxyServiceLauncher
+import com.freeturn.app.service.reality.RealityStateBridge
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -19,6 +20,7 @@ import kotlinx.coroutines.runBlocking
 class AndroidProxyServiceLauncher(
     private val context: Context,
     private val prefs: AppPreferences,
+    private val realityStateBridge: RealityStateBridge,
 ) : ProxyServiceLauncher {
 
     // runBlocking короткий: DataStore читает из уже прогретого in-memory кэша на
@@ -31,11 +33,15 @@ class AndroidProxyServiceLauncher(
             ProxyService::class.java
 
     override fun start() {
-        val intent = Intent(context, targetServiceClass())
+        val targetClass = targetServiceClass()
+        val intent = Intent(context, targetClass)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
             context.startService(intent)
+        }
+        if (targetClass == RealityVpnService::class.java) {
+            realityStateBridge.bind()
         }
     }
 
@@ -54,6 +60,7 @@ class AndroidProxyServiceLauncher(
         // обрабатывает первым делом, до старта foreground/туннеля).
         context.stopService(Intent(context, ProxyService::class.java))
         context.startService(Intent(context, RealityVpnService::class.java).apply { action = ProxyActions.STOP })
+        realityStateBridge.unbind()
     }
 
     override fun setWireGuard(enabled: Boolean) {
