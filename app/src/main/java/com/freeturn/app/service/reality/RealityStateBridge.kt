@@ -47,7 +47,9 @@ class RealityStateBridge(private val context: Context) {
             try {
                 messenger.send(register)
             } catch (e: RemoteException) {
-                bound = false
+                // OS-level binding (onServiceConnected already fired) is still live even
+                // if the register message itself failed to send - unbind() must still be
+                // able to release it, so `bound` stays true here.
             }
         }
 
