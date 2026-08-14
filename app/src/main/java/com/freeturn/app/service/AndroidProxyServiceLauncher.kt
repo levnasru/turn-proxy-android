@@ -1,5 +1,6 @@
 package com.freeturn.app.service
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -23,8 +24,6 @@ class AndroidProxyServiceLauncher(
     private val realityStateBridge: RealityStateBridge,
 ) : ProxyServiceLauncher {
 
-    private var lastStartedClass: Class<*>? = null
-
     // runBlocking короткий: DataStore читает из уже прогретого in-memory кэша на
     // повторных чтениях (первое чтение - холодный старт процесса, тут им не является -
     // до нажатия "подключиться" экран настроек уже отрисовался с этим же значением).
@@ -36,7 +35,6 @@ class AndroidProxyServiceLauncher(
 
     override fun start() {
         val targetClass = targetServiceClass()
-        lastStartedClass = targetClass
         val intent = Intent(context, targetClass)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -69,13 +67,26 @@ class AndroidProxyServiceLauncher(
         // класс), оба интента попадают в один процесс и гонка между stopSelf()
         // STOP-ветки и startForeground() connect-ветки роняет сервис с
         // ForegroundServiceDidNotStartInTimeException - живой краш, воспроизведён
-        // 2026-08-14. Поэтому шлём STOP только если Reality реально был тем,
-        // что мы сами запускали (lastStartedClass), не спекулятивно.
+        // 2026-08-14. Поэтому шлём STOP только если Reality реально сейчас
+        // запущен - проверяем это живым запросом к ActivityManager
+        // (isRealityServiceRunning), не спекулятивно.
         context.stopService(Intent(context, ProxyService::class.java))
-        if (lastStartedClass == RealityVpnService::class.java) {
+        if (isRealityServiceRunning()) {
             context.startService(Intent(context, RealityVpnService::class.java).apply { action = ProxyActions.STOP })
         }
         realityStateBridge.unbind()
+    }
+
+    // Спрашиваем ActivityManager напрямую вместо запоминания в памяти - переживает
+    // пересоздание основного процесса, пока :reality продолжает жить (см.
+    // App.onCreate()). getRunningServices() формально deprecated, но по документации
+    // по-прежнему отдаёт собственные сервисы вызывающего приложения - это ровно то,
+    // что нужно.
+    private fun isRealityServiceRunning(): Boolean {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return am.getRunningServices(Int.MAX_VALUE).any {
+            it.service.className == RealityVpnService::class.java.name
+        }
     }
 
     override fun setWireGuard(enabled: Boolean) {
