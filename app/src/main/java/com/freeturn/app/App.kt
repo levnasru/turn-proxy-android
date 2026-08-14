@@ -61,7 +61,8 @@ class App : Application() {
         // /proc/self/cmdline читает командную строку СВОЕГО ЖЕ процесса - всегда
         // доступно ядром для самого процесса, не зависит от ActivityManager.
         return try {
-            java.io.File("/proc/self/cmdline").readText().trim(' ', ' ') == packageName
+            // NUL-terminated, не пробелом - trim по пробелу тут не срабатывает никогда.
+            java.io.File("/proc/self/cmdline").readText().trim('\u0000', ' ') == packageName
         } catch (e: Exception) {
             false
         }
