@@ -405,6 +405,7 @@ class RealityVpnService : VpnService() {
  */
 private class RealityStateSink {
     private val clients = java.util.concurrent.CopyOnWriteArrayList<Messenger>()
+    private val pendingLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
 
     private var running = false
     private var active = 0
@@ -428,6 +429,7 @@ private class RealityStateSink {
     fun registerClient(client: Messenger) {
         clients += client
         sendTo(client, RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
+        for (text in pendingLogs) sendTo(client, RealityIpc.MSG_LOG_LINE, realityLogBundle(text))
     }
 
     fun setRunning(value: Boolean) {
@@ -471,7 +473,11 @@ private class RealityStateSink {
         broadcastState()
     }
 
-    fun addLog(text: String) = broadcastAll(RealityIpc.MSG_LOG_LINE, realityLogBundle(text))
+    fun addLog(text: String) {
+        pendingLogs += text
+        while (pendingLogs.size > 50) pendingLogs.removeAt(0)
+        broadcastAll(RealityIpc.MSG_LOG_LINE, realityLogBundle(text))
+    }
 
     private fun broadcastState() = broadcastAll(RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
 
