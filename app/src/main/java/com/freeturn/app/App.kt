@@ -1,6 +1,9 @@
 package com.freeturn.app
 
+import android.app.ActivityManager
 import android.app.Application
+import android.os.Build
+import android.os.Process
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.di.appModule
 import com.freeturn.app.domain.proxy.ProxyServiceState
@@ -36,7 +39,23 @@ class App : Application() {
         // Если Reality-туннель уже работал в фоне (процесс :reality пережил
         // пересоздание основного процесса), подключаемся к нему сразу, а не
         // ждём следующего нажатия "подключиться".
-        realityStateBridge.bind()
+        if (isMainProcess()) {
+            realityStateBridge.bind()
+        }
+    }
+
+    // App.onCreate() runs in every process this app spawns, including the isolated
+    // :reality process (see RealityVpnService's android:process=":reality" in the
+    // manifest) - binding to RealityVpnService from within its own not-yet-created
+    // process races its startForegroundService() sequence and can blow the FGS
+    // start-in-time budget. Only the main process should ever bind.
+    private fun isMainProcess(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return getProcessName() == packageName
+        }
+        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val pid = Process.myPid()
+        return am.runningAppProcesses?.any { it.pid == pid && it.processName == packageName } == true
     }
 
     // Перерисовывает виджет при смене статуса прокси или активного сервера
