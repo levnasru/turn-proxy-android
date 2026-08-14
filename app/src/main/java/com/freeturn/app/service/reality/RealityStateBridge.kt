@@ -78,9 +78,11 @@ class RealityStateBridge(private val context: Context) {
     private fun applyState(state: RealityState) {
         ProxyServiceState.setRunning(state.running)
         ProxyServiceState.setConnectionStats(ConnectionStats(state.active, state.total))
-        ProxyServiceState.setStartupResult(
-            state.failedMessage?.let { StartupResult.Failed(it) } ?: StartupResult.Success
-        )
+        if (state.hasStartupResult) {
+            ProxyServiceState.setStartupResult(
+                state.failedMessage?.let { StartupResult.Failed(it) } ?: StartupResult.Success
+            )
+        }
         ProxyServiceState.setTunnelActive(state.tunnelActive)
         if (state.connectedSince != null) {
             ProxyServiceState.markConnectedIfAbsent(state.connectedSince)

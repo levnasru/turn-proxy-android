@@ -16,7 +16,9 @@ import kotlinx.coroutines.runBlocking
  * интерфейсом: [ProxyService] (наше TURN-ядро подпроцессом + WireGuard-библиотека
  * поверх него) для TunnelTransport.WIREGUARD/NONE, [RealityVpnService] (встроенный
  * libXray, свой VpnService) для TunnelTransport.REALITY. Выбор - по конфигу
- * активного сервера на момент нажатия, не хранится отдельно.
+ * активного сервера на момент нажатия, не хранится отдельно. Также владеет
+ * жизненным циклом [RealityStateBridge] - подключает его при старте Reality,
+ * отключает при любой остановке.
  */
 class AndroidProxyServiceLauncher(
     private val context: Context,
@@ -24,18 +26,23 @@ class AndroidProxyServiceLauncher(
     private val realityStateBridge: RealityStateBridge,
 ) : ProxyServiceLauncher {
 
-    // runBlocking короткий: DataStore читает из уже прогретого in-memory кэша на
-    // повторных чтениях (первое чтение - холодный старт процесса, тут им не является -
-    // до нажатия "подключиться" экран настроек уже отрисовался с этим же значением).
-    private fun targetServiceClass(): Class<*> =
-        if (runBlocking { prefs.clientConfigFlow.first() }.tunnelTransport == TunnelTransport.REALITY)
+    override fun start() {
+        // runBlocking короткий: DataStore читает из уже прогретого in-memory кэша на
+        // повторных чтениях (первое чтение - холодный старт процесса, тут им не является -
+        // до нажатия "подключиться" экран настроек уже отрисовался с этим же значением).
+        val cfg = runBlocking { prefs.clientConfigFlow.first() }
+        val targetClass = if (cfg.tunnelTransport == TunnelTransport.REALITY)
             RealityVpnService::class.java
         else
             ProxyService::class.java
-
-    override fun start() {
-        val targetClass = targetServiceClass()
         val intent = Intent(context, targetClass)
+        if (targetClass == RealityVpnService::class.java) {
+            // :reality - изолированный процесс, который Android может удерживать живым
+            // между сессиями - сервис не может надёжно перечитать актуальный xrayConfig
+            // из DataStore сам (см. RealityVpnService.onStartCommand), поэтому конфиг,
+            // прочитанный только что тут, едет интентом.
+            intent.putExtra(ProxyActions.EXTRA_XRAY_CONFIG, cfg.xrayConfig)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
@@ -74,6 +81,13 @@ class AndroidProxyServiceLauncher(
         if (isRealityServiceRunning()) {
             context.startService(Intent(context, RealityVpnService::class.java).apply { action = ProxyActions.STOP })
         }
+        // unbind() тут не дожидается реального teardown в :reality - STOP-интент
+        // асинхронный, вся его последовательность событий (markTeardownStarted ->
+        // ... -> markTeardownComplete) прилетит мостом УЖЕ ПОСЛЕ этого unbind().
+        // Это ок только потому, что RealityStateSink не завязан на локальное
+        // состояние бинда моста - клиента снимает с рассылки только неудачный
+        // send(), не факт unbind() на другом конце. Не убирать unbind() отсюда,
+        // не проверив это допущение (см. RealityStateSink в RealityVpnService.kt).
         realityStateBridge.unbind()
     }
 

@@ -4,20 +4,20 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
+import android.os.RemoteException
 import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import com.freeturn.app.R
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.StartupResult
-import android.os.Handler
-import android.os.IBinder
-import android.os.Looper
-import android.os.Message
-import android.os.Messenger
-import android.os.RemoteException
 import com.freeturn.app.service.reality.RealityIpc
 import com.freeturn.app.service.reality.RealityState
 import com.freeturn.app.service.reality.realityLogBundle
@@ -78,7 +78,15 @@ class RealityVpnService : VpnService() {
         true
     }
 
-    override fun onBind(intent: Intent?): IBinder = Messenger(incomingHandler).binder
+    // SERVICE_INTERFACE-бинд принадлежит системе: Vpn.java (system_server) биндится
+    // именно этим интентом и держит возвращённый отсюда Callback-binder, чтобы слать
+    // на него LAST_CALL_TRANSACTION -> onRevoke() при отзыве VPN-разрешения. Если
+    // подменить его своим Messenger, onRevoke() перестаёт вызываться вообще -
+    // "призрачное" подключение с висящим wakelock и уведомлением. Свой Messenger
+    // отдаём только собственному мосту (RealityStateBridge биндится интентом без action).
+    override fun onBind(intent: Intent?): IBinder? =
+        if (intent?.action == SERVICE_INTERFACE) super.onBind(intent)
+        else Messenger(incomingHandler).binder
 
     override fun onCreate() {
         super.onCreate()
@@ -88,6 +96,9 @@ class RealityVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+
         if (intent?.action == ProxyActions.STOP) {
             // Систем-сервис (Vpn.java в system_server) держит собственный bindService()
             // к нам, пока VPN-сеть считается активной - это видно в dumpsys activity
@@ -99,14 +110,23 @@ class RealityVpnService : VpnService() {
             // unbind ждёт закрытия fd, fd закрывается только в onDestroy). Тердаун
             // делаем тут, синхронно, до stopSelf() - тогда система реально отпускает
             // bind и Android потом штатно вызывает onDestroy() для остального.
+            //
+            // Белт-энд-брейсес против ForegroundServiceDidNotStartInTimeException (см.
+            // комментарий в AndroidProxyServiceLauncher.stop()): если этот STOP всё же
+            // достался процессу параллельно со "свежим" connect (тот же ServiceRecord),
+            // startForegroundService()-промис должен быть закрыт ПЕРЕД stopSelf() -
+            // иначе ОС считает его невыполненным, даже когда сервис и так тушится сам.
+            try {
+                ServiceCompat.startForeground(this, ProxyNotifier.NOTIF_ID_FG, notifier.build(), fgsType)
+            } catch (e: Exception) {
+                // Не критично - teardown/stopSelf ниже всё равно снимут сервис.
+            }
             teardownTunnel()
             stopSelf()
             return START_NOT_STICKY
         }
 
         notifier.prepareConnecting()
-        val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
         try {
             ServiceCompat.startForeground(this, ProxyNotifier.NOTIF_ID_FG, notifier.build(), fgsType)
         } catch (e: Exception) {
@@ -114,16 +134,21 @@ class RealityVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
+        // Конфиг приходит интентом от AndroidProxyServiceLauncher, не перечитывается
+        // из DataStore здесь: :reality - изолированный процесс, который Android может
+        // держать живым между сессиями (см. EXTRA_XRAY_CONFIG) - перечитывание из
+        // AppPreferences в этом процессе видело бы конфиг только на момент ПЕРВОГО
+        // старта процесса, не текущий.
+        val xrayConfigOverride = intent?.getStringExtra(ProxyActions.EXTRA_XRAY_CONFIG)
         stateSink.setRunning(true)
         acquireWakeLock()
         stateSink.addLog("Reality: запуск")
-        serviceScope.launch { startXray() }
+        serviceScope.launch { startXray(xrayConfigOverride) }
         return START_STICKY
     }
 
-    private suspend fun startXray() {
-        val cfg = prefs.clientConfigFlow.first()
-        val rawJson = cfg.xrayConfig
+    private suspend fun startXray(xrayConfigOverride: String?) {
+        val rawJson = xrayConfigOverride ?: prefs.clientConfigFlow.first().xrayConfig
         if (rawJson.isBlank()) {
             fail("Xray-конфиг не задан")
             return
@@ -325,9 +350,9 @@ class RealityVpnService : VpnService() {
     private fun teardownTunnel() {
         if (!tornDown.compareAndSet(false, true)) return
 
-        // AndroidProxyServiceLauncher.stop() безусловно шлёт STOP-экшен и сюда, даже
-        // когда Reality за всё время жизни процесса вообще не запускалась (не знает,
-        // какой из двух сервисов реально поднят - см. её комментарий). tunFd не
+        // AndroidProxyServiceLauncher.stop() шлёт STOP-экшен сюда только когда живьём
+        // подтвердил через ActivityManager, что Reality реально запущен (см. её
+        // isRealityServiceRunning()) - но это не отменяет старую защиту ниже: tunFd не
         // установлен => установить его и не успели => туннеля не было. isRunning/
         // teardownComplete в ProxyServiceState - ГЛОБАЛЬНОЕ состояние, общее с
         // ProxyService: если на этом холостом STOP всё равно дёрнуть
@@ -368,6 +393,13 @@ class RealityVpnService : VpnService() {
         // в отдельный поток. markTeardownComplete - только после того, как invoke
         // реально вернулся (тот же паттерн, что уже верно сделан в
         // CoreProcessController.destroyProcessAndTunnel()).
+        //
+        // Мост (RealityStateBridge) может к этому моменту быть уже отвязан от
+        // основного процесса (AndroidProxyServiceLauncher.stop() зовёт unbind() сразу
+        // после отправки STOP-интента, не дожидаясь реального teardown) - это ок:
+        // stateSink не чистит clients по локальному состоянию бинда, только когда
+        // send() реально падает, а Messenger - независимый канал в тот же живой
+        // процесс, unbind() на него не влияет.
         Thread {
             val stopRequest = JSONObject().apply {
                 put("apiVersion", 1)
@@ -402,6 +434,12 @@ class RealityVpnService : VpnService() {
  * у него своя JVM-копия синглтона ProxyServiceState, недоступная основному
  * процессу. Рассылает состояние подключённым клиентам (RealityStateBridge) через
  * Messenger вместо прямой записи в общий объект.
+ *
+ * Публичные методы синхронизированы (@Synchronized = synchronized(this)) - поля
+ * состояния пишутся с трёх разных потоков (главный: onStartCommand/STOP-ветка;
+ * Dispatchers.IO: startXray()/fail(); отдельный Thread: async-хвост
+ * teardownTunnel()), а currentState()/registerClient() читают их же для снепшота
+ * новому клиенту - без синхронизации это гонка данных без happens-before.
  */
 private class RealityStateSink {
     private val clients = java.util.concurrent.CopyOnWriteArrayList<Messenger>()
@@ -411,68 +449,82 @@ private class RealityStateSink {
     private var active = 0
     private var total = 0
     private var failedMessage: String? = null
+    private var hasStartupResult = false
     private var tunnelActive = false
     private var connectedSince: Long? = null
     private var teardownComplete = true
 
+    @Synchronized
     private fun currentState() = RealityState(
         running = running,
         active = active,
         total = total,
         failedMessage = failedMessage,
+        hasStartupResult = hasStartupResult,
         tunnelActive = tunnelActive,
         connectedSince = connectedSince,
         teardownComplete = teardownComplete
     )
 
     /** Новый клиент подключился - сразу шлём полный снепшот, не только будущие изменения. */
+    @Synchronized
     fun registerClient(client: Messenger) {
         clients += client
         sendTo(client, RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
         for (text in pendingLogs) sendTo(client, RealityIpc.MSG_LOG_LINE, realityLogBundle(text))
     }
 
+    @Synchronized
     fun setRunning(value: Boolean) {
         running = value
         broadcastState()
     }
 
+    @Synchronized
     fun setStartupResult(result: StartupResult) {
         failedMessage = (result as? StartupResult.Failed)?.message
+        hasStartupResult = true
         broadcastState()
     }
 
+    @Synchronized
     fun setConnectionStats(stats: ConnectionStats) {
         active = stats.active
         total = stats.total
         broadcastState()
     }
 
+    @Synchronized
     fun setTunnelActive(value: Boolean) {
         tunnelActive = value
         broadcastState()
     }
 
+    @Synchronized
     fun markConnectedIfAbsent(nowElapsed: Long) {
         if (connectedSince == null) connectedSince = nowElapsed
         broadcastState()
     }
 
+    @Synchronized
     fun clearConnectedSince() {
         connectedSince = null
         broadcastState()
     }
 
+    @Synchronized
     fun markTeardownStarted() {
         teardownComplete = false
         broadcastState()
     }
 
+    @Synchronized
     fun markTeardownComplete() {
         teardownComplete = true
         broadcastState()
     }
 
+    @Synchronized
     fun addLog(text: String) {
         pendingLogs += text
         while (pendingLogs.size > 50) pendingLogs.removeAt(0)

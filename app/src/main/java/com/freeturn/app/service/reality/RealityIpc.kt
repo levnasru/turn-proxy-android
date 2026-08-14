@@ -22,6 +22,7 @@ data class RealityState(
     val active: Int,
     val total: Int,
     val failedMessage: String?,
+    val hasStartupResult: Boolean,
     val tunnelActive: Boolean,
     val connectedSince: Long?,
     val teardownComplete: Boolean
@@ -31,6 +32,7 @@ private const val KEY_RUNNING = "running"
 private const val KEY_ACTIVE = "active"
 private const val KEY_TOTAL = "total"
 private const val KEY_FAILED_MESSAGE = "failedMessage"
+private const val KEY_HAS_STARTUP_RESULT = "hasStartupResult"
 private const val KEY_TUNNEL_ACTIVE = "tunnelActive"
 private const val KEY_CONNECTED_SINCE = "connectedSince"
 private const val KEY_TEARDOWN_COMPLETE = "teardownComplete"
@@ -41,6 +43,7 @@ fun RealityState.toBundle(): Bundle = Bundle().apply {
     putInt(KEY_ACTIVE, active)
     putInt(KEY_TOTAL, total)
     putString(KEY_FAILED_MESSAGE, failedMessage)
+    putBoolean(KEY_HAS_STARTUP_RESULT, hasStartupResult)
     putBoolean(KEY_TUNNEL_ACTIVE, tunnelActive)
     connectedSince?.let { putLong(KEY_CONNECTED_SINCE, it) }
     putBoolean(KEY_TEARDOWN_COMPLETE, teardownComplete)
@@ -51,6 +54,7 @@ fun Bundle.toRealityState(): RealityState = RealityState(
     active = getInt(KEY_ACTIVE),
     total = getInt(KEY_TOTAL),
     failedMessage = getString(KEY_FAILED_MESSAGE),
+    hasStartupResult = getBoolean(KEY_HAS_STARTUP_RESULT),
     tunnelActive = getBoolean(KEY_TUNNEL_ACTIVE),
     connectedSince = if (containsKey(KEY_CONNECTED_SINCE)) getLong(KEY_CONNECTED_SINCE) else null,
     teardownComplete = getBoolean(KEY_TEARDOWN_COMPLETE)
