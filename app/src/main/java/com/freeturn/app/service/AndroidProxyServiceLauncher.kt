@@ -23,6 +23,8 @@ class AndroidProxyServiceLauncher(
     private val realityStateBridge: RealityStateBridge,
 ) : ProxyServiceLauncher {
 
+    private var lastStartedClass: Class<*>? = null
+
     // runBlocking короткий: DataStore читает из уже прогретого in-memory кэша на
     // повторных чтениях (первое чтение - холодный старт процесса, тут им не является -
     // до нажатия "подключиться" экран настроек уже отрисовался с этим же значением).
@@ -34,6 +36,7 @@ class AndroidProxyServiceLauncher(
 
     override fun start() {
         val targetClass = targetServiceClass()
+        lastStartedClass = targetClass
         val intent = Intent(context, targetClass)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -46,9 +49,8 @@ class AndroidProxyServiceLauncher(
     }
 
     override fun stop() {
-        // Останавливаем оба безусловно: не знаем, какой именно был поднят в этом
-        // запуске (пользователь мог сменить режим, не перезапустив сервис), а
-        // stop на не запущенный сервис - no-op, не ошибка.
+        // Останавливаем ProxyService безусловно - stopService на не запущенный
+        // сервис дешёвый no-op, ничего не поднимает.
         //
         // ProxyService - обычный Service (WG-туннель живёт в отдельной GoBackend$
         // VpnService библиотеки com.wireguard.android) - внешний stopService() ок.
@@ -58,8 +60,21 @@ class AndroidProxyServiceLauncher(
         // туннель остаются жить, onDestroy() просто никогда не вызывается. Верный
         // путь - stopSelf() ИЗНУТРИ, через STOP-экшен (onStartCommand уже его
         // обрабатывает первым делом, до старта foreground/туннеля).
+        //
+        // Но RealityVpnService теперь живёт в отдельном процессе (:reality,
+        // android:process в манифесте) - startService() на него, если он не
+        // запущен, поднимает процесс с нуля (~600мс: zygote, classloader, DI),
+        // только чтобы доставить no-op teardown. Если следом почти сразу идёт
+        // настоящий connect в Reality (свой startForegroundService на тот же
+        // класс), оба интента попадают в один процесс и гонка между stopSelf()
+        // STOP-ветки и startForeground() connect-ветки роняет сервис с
+        // ForegroundServiceDidNotStartInTimeException - живой краш, воспроизведён
+        // 2026-08-14. Поэтому шлём STOP только если Reality реально был тем,
+        // что мы сами запускали (lastStartedClass), не спекулятивно.
         context.stopService(Intent(context, ProxyService::class.java))
-        context.startService(Intent(context, RealityVpnService::class.java).apply { action = ProxyActions.STOP })
+        if (lastStartedClass == RealityVpnService::class.java) {
+            context.startService(Intent(context, RealityVpnService::class.java).apply { action = ProxyActions.STOP })
+        }
         realityStateBridge.unbind()
     }
 
