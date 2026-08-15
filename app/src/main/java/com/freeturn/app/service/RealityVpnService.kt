@@ -2,6 +2,7 @@ package com.freeturn.app.service
 
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.IpPrefix
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -18,6 +19,8 @@ import com.freeturn.app.R
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.StartupResult
+import com.freeturn.app.domain.proxy.PRIVATE_IPV4_CIDRS
+import com.freeturn.app.domain.proxy.excludeLanFromAllowedIps
 import com.freeturn.app.service.reality.RealityIpc
 import com.freeturn.app.service.reality.RealityState
 import com.freeturn.app.service.reality.realityLogBundle
@@ -28,6 +31,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.net.InetAddress
 import libXray.DialerController
 import libXray.LibXray
 import org.json.JSONObject
@@ -158,8 +162,30 @@ class RealityVpnService : VpnService() {
             .setSession("VK-TURN Reality")
             .setMtu(1420)
             .addAddress("172.19.0.1", 30)
-            .addRoute("0.0.0.0", 0)
             .addDnsServer("1.1.1.1")
+        // RFC1918/link-local/loopback (принтер/NAS/роутер/KDE Connect/Immich по
+        // локальному IP) должны остаться доступны поверх поднятого туннеля.
+        // Раньше был голый addRoute(0.0.0.0, 0) без единого исключения. Комплемент
+        // из CIDR (addRoute на всё, КРОМЕ приватных диапазонов) недостаточен сам по
+        // себе - живой разбор `ip rule`/`ip route` на SM_S938B (Android 16)
+        // показал, что промах в таблице маршрутов VPN проваливается в безусловное
+        // "unreachable", а не откатывается на Wi-Fi. Builder.excludeRoute() (API 33+)
+        // - единственный API, который явно помечает диапазон как невладеемый VPN и
+        // получает откат на другую сеть; на нём и держим полный 0.0.0.0/0.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            builder.addRoute("0.0.0.0", 0)
+            PRIVATE_IPV4_CIDRS.forEach { cidr ->
+                val (addr, prefix) = cidr.split("/")
+                runCatching { builder.excludeRoute(IpPrefix(InetAddress.getByName(addr), prefix.toInt())) }
+            }
+        } else {
+            // До API 33 excludeRoute() нет - комплемент-список не даёт гарантии
+            // отвала на Wi-Fi при промахе, но не хуже прежнего голого 0.0.0.0/0.
+            excludeLanFromAllowedIps("0.0.0.0/0").split(",").forEach { cidr ->
+                val (addr, prefix) = cidr.trim().split("/")
+                builder.addRoute(addr, prefix.toInt())
+            }
+        }
         // Собственный пакет мимо своего же туннеля - иначе петля (тот же принцип,
         // что "Socks5Server не поднимаем" в ProxyService.onCreate).
         runCatching { builder.addDisallowedApplication(packageName) }

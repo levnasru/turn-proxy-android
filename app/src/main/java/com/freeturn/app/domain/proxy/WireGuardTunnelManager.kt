@@ -146,8 +146,16 @@ private fun String.withMtu(mtu: Int): String {
 // IPv6-часть AllowedIPs не трогаем - LAN-устройства почти всегда IPv4, а вычитание диапазонов
 // в 128-битном пространстве overkill для этой задачи (см. WgLanBypassTest, поведение
 // зафиксировано assert-ами: приватные диапазоны исключены, IPv6-записи проходят как есть).
-private val PRIVATE_IPV4_CIDRS = listOf(
-    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8"
+// internal, не private - RealityVpnService переиспользует тот же список через
+// Builder.excludeRoute() (см. её комментарий про живой разбор ip rule на Android 16).
+// 255.255.255.255 (limited broadcast) и 224.0.0.0/4 (мультикаст, mDNS) - не RFC1918,
+// но тоже локальный сегмент: живой `ip route get 255.255.255.255 uid <captured>` /
+// `224.0.0.251` на SM_S938B показал уход в tun0 при этих CIDR отсутствующих в списке -
+// KDE Connect (broadcast-discovery на 1716) из-за этого не находил устройства, хотя
+// прямой юникаст (Immich по IP) уже работал через RFC1918-часть списка.
+internal val PRIVATE_IPV4_CIDRS = listOf(
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8",
+    "255.255.255.255/32", "224.0.0.0/4"
 )
 
 private fun String.withLanBypass(): String {
