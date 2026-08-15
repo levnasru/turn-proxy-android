@@ -8,11 +8,15 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.freeturn.app.data.backup.BackupData
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.ClientId
-import com.freeturn.app.data.config.SshConfig
 import com.freeturn.app.data.server.Server
 import com.freeturn.app.data.server.ServerJson
 import com.freeturn.app.data.server.ServerOpts
 import com.freeturn.app.data.server.ServersSnapshot
+import com.freeturn.app.data.server.Subscription
+import com.freeturn.app.data.server.SubscriptionJson
+import com.freeturn.app.data.server.SubscriptionNode
+import com.freeturn.app.data.server.SubscriptionSyncResult
+import com.freeturn.app.data.config.TunnelTransport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -42,6 +46,7 @@ class AppPreferences(context: Context) {
         val RESTART_SERVER_ON_SWITCH = booleanPreferencesKey("restart_server_on_switch")
         val SERVERS_JSON = stringPreferencesKey("servers_json")
         val ACTIVE_SERVER_ID = stringPreferencesKey("active_server_id")
+        val SUBSCRIPTIONS_JSON = stringPreferencesKey("subscriptions_json")
         val OWN_CLIENT_ID = stringPreferencesKey("own_client_id")
         val HOTSPOT_PROXY_ENABLED = booleanPreferencesKey("hotspot_proxy_enabled")
     }
@@ -59,14 +64,15 @@ class AppPreferences(context: Context) {
         )
     }
 
-    // Производные от serversSnapshot: их читает рантайм (ProxyService, оркестратор,
-    // SSH). Без активного сервера отдают дефолты - запускать в этом случае нечего.
+    val subscriptionsSnapshot: Flow<List<Subscription>> = prefFlow { prefs ->
+        SubscriptionJson.decodeList(prefs[SUBSCRIPTIONS_JSON])
+    }
+
+    // Производные от serversSnapshot: их читает рантайм (ProxyService, оркестратор).
+    // Без активного сервера отдают дефолты - запускать в этом случае нечего.
 
     private val activeServerFlow: Flow<Server?> =
         serversSnapshot.map { it.active }.distinctUntilChanged()
-
-    val sshConfigFlow: Flow<SshConfig> =
-        activeServerFlow.map { it?.ssh ?: SshConfig() }.distinctUntilChanged()
 
     val clientConfigFlow: Flow<ClientConfig> =
         activeServerFlow.map { it?.client ?: ClientConfig() }.distinctUntilChanged()
@@ -178,6 +184,105 @@ class AppPreferences(context: Context) {
         }
     }
 
+    suspend fun addSubscription(subscription: Subscription): String {
+        context.dataStore.edit { prefs ->
+            val list = SubscriptionJson.decodeList(prefs[SUBSCRIPTIONS_JSON])
+            val base = subscription.name.trim().ifBlank { Subscription.FALLBACK_NAME }
+            val named = subscription.copy(name = uniqueSubscriptionName(base, list))
+            prefs[SUBSCRIPTIONS_JSON] = SubscriptionJson.encodeList(list + named)
+        }
+        return subscription.id
+    }
+
+    suspend fun renameSubscription(id: String, name: String) {
+        context.dataStore.edit { prefs ->
+            val list = SubscriptionJson.decodeList(prefs[SUBSCRIPTIONS_JSON])
+            val target = list.firstOrNull { it.id == id } ?: return@edit
+            val unique = uniqueSubscriptionName(name.trim().ifBlank { target.name }, list, excludingId = id)
+            if (unique == target.name) return@edit
+            prefs[SUBSCRIPTIONS_JSON] =
+                SubscriptionJson.encodeList(list.map { if (it.id == id) it.copy(name = unique) else it })
+        }
+    }
+
+    /** Удаляет подписку и каскадом все её сервера (у кого subscriptionId == id). */
+    suspend fun deleteSubscription(id: String) {
+        context.dataStore.edit { prefs ->
+            val subs = SubscriptionJson.decodeList(prefs[SUBSCRIPTIONS_JSON])
+            val remainingSubs = subs.filterNot { it.id == id }
+            if (remainingSubs.size != subs.size) {
+                prefs[SUBSCRIPTIONS_JSON] = SubscriptionJson.encodeList(remainingSubs)
+            }
+
+            val servers = ServerJson.decodeList(prefs[SERVERS_JSON])
+            val remainingServers = servers.filterNot { it.subscriptionId == id }
+            if (remainingServers.size != servers.size) {
+                prefs[SERVERS_JSON] = ServerJson.encodeList(remainingServers)
+                val activeId = prefs[ACTIVE_SERVER_ID]
+                if (activeId != null && remainingServers.none { it.id == activeId }) {
+                    val next = remainingServers.firstOrNull()
+                    if (next == null) prefs.remove(ACTIVE_SERVER_ID) else prefs[ACTIVE_SERVER_ID] = next.id
+                }
+            }
+        }
+    }
+
+    /**
+     * Атомарный diff подписки: [nodes] - свежий список из подписки (стабильный key + готовый
+     * xrayConfig на каждую ноду). Добавляет новые, обновляет xrayConfig изменившихся, удаляет
+     * пропавшие - серверы вне этой подписки (VK-TURN, личные Reality-конфиги, другие подписки)
+     * не трогает.
+     */
+    suspend fun syncSubscriptionServers(subscriptionId: String, nodes: List<SubscriptionNode>): SubscriptionSyncResult {
+        var added = 0
+        var updated = 0
+        var removed = 0
+        context.dataStore.edit { prefs ->
+            val list = ServerJson.decodeList(prefs[SERVERS_JSON])
+            val nodeByKey = nodes.associateBy { it.key }
+            val existingKeys = list.filter { it.subscriptionId == subscriptionId }
+                .map { it.subscriptionNodeKey }.toSet()
+
+            val kept = list.mapNotNull { server ->
+                if (server.subscriptionId != subscriptionId) return@mapNotNull server
+                val node = nodeByKey[server.subscriptionNodeKey] ?: run { removed++; return@mapNotNull null }
+                if (server.client.xrayConfig == node.xrayConfig) server
+                else { updated++; server.copy(client = server.client.copy(xrayConfig = node.xrayConfig)) }
+            }
+
+            val newServers = nodes.filter { it.key !in existingKeys }.map { node ->
+                added++
+                Server(
+                    name = uniqueServerName(node.name, kept),
+                    client = ClientConfig(
+                        tunnelTransport = TunnelTransport.REALITY,
+                        xrayConfig = node.xrayConfig,
+                        syncServerSwitches = false
+                    ),
+                    subscriptionId = subscriptionId,
+                    subscriptionNodeKey = node.key
+                )
+            }
+
+            val result = kept + newServers
+            prefs[SERVERS_JSON] = ServerJson.encodeList(result)
+            val activeId = prefs[ACTIVE_SERVER_ID]
+            if (activeId != null && result.none { it.id == activeId }) {
+                val next = result.firstOrNull()
+                if (next == null) prefs.remove(ACTIVE_SERVER_ID) else prefs[ACTIVE_SERVER_ID] = next.id
+            }
+        }
+        return SubscriptionSyncResult(added, updated, removed)
+    }
+
+    private fun uniqueSubscriptionName(base: String, existing: List<Subscription>, excludingId: String? = null): String {
+        val taken = existing.filter { it.id != excludingId }.map { it.name.trim().lowercase() }.toSet()
+        if (base.lowercase() !in taken) return base
+        var i = 2
+        while ("$base ($i)".lowercase() in taken) i++
+        return "$base ($i)"
+    }
+
     suspend fun setActiveServerId(id: String?) {
         context.dataStore.edit { prefs ->
             if (id == null) prefs.remove(ACTIVE_SERVER_ID)
@@ -194,18 +299,6 @@ class AppPreferences(context: Context) {
         var i = 2
         while ("$base ($i)".lowercase() in taken) i++
         return "$base ($i)"
-    }
-
-    suspend fun saveSshConfig(config: SshConfig) {
-        updateActiveServer { it.copy(ssh = config) }
-    }
-
-    suspend fun saveSshFingerprint(fingerprint: String) {
-        updateActiveServer { it.copy(ssh = it.ssh.copy(hostFingerprint = fingerprint)) }
-    }
-
-    suspend fun saveSshRootMode(mode: String) {
-        updateActiveServer { it.copy(ssh = it.ssh.copy(rootMode = mode)) }
     }
 
     suspend fun setDynamicTheme(enabled: Boolean) {

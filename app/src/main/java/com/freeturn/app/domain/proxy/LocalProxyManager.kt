@@ -1,6 +1,7 @@
 package com.freeturn.app.domain.proxy
 
 import com.freeturn.app.data.config.ClientConfig
+import com.freeturn.app.data.config.TunnelTransport
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.ProxyState
 import com.freeturn.app.domain.StartupResult
@@ -116,24 +117,33 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
         withTimeoutOrNull(10_000) { ProxyServiceState.teardownComplete.first { it } }
         if (_proxyState.value is ProxyState.Error) _proxyState.value = ProxyState.Idle
 
-        if (!cfg.isRawMode && cfg.serverAddress.isBlank()) {
-            setErrorWithAutoReset("Не заполнены настройки клиента")
-            return
-        }
-        if (!cfg.isRawMode && !cfg.hubMode && cfg.vkLink.isBlank()) {
-            setErrorWithAutoReset("Не заполнены настройки клиента")
-            return
-        }
-        // Ядро без этих трёх флагов просто откажется стартовать (config.go).
-        if (!cfg.isRawMode && cfg.hubMode &&
-            (cfg.hubUrl.isBlank() || cfg.hubPin.isBlank() || cfg.hubToken.isBlank())
-        ) {
-            setErrorWithAutoReset("Не заполнены настройки хаба: URL, pin и токен")
-            return
-        }
-        if (cfg.isRawMode && cfg.rawCommand.isBlank()) {
-            setErrorWithAutoReset("Не задана raw-команда")
-            return
+        if (cfg.tunnelTransport == TunnelTransport.REALITY) {
+            // Reality идёт мимо ядра-подпроцесса (RealityVpnService + libXray) - проверки
+            // ниже относятся только к VK-TURN клиенту (serverAddress/vkLink/hub/raw).
+            if (!cfg.realityActive) {
+                setErrorWithAutoReset("Не задан Xray-конфиг")
+                return
+            }
+        } else {
+            if (!cfg.isRawMode && cfg.serverAddress.isBlank()) {
+                setErrorWithAutoReset("Не заполнены настройки клиента")
+                return
+            }
+            if (!cfg.isRawMode && !cfg.hubMode && cfg.vkLink.isBlank()) {
+                setErrorWithAutoReset("Не заполнены настройки клиента")
+                return
+            }
+            // Ядро без этих трёх флагов просто откажется стартовать (config.go).
+            if (!cfg.isRawMode && cfg.hubMode &&
+                (cfg.hubUrl.isBlank() || cfg.hubPin.isBlank() || cfg.hubToken.isBlank())
+            ) {
+                setErrorWithAutoReset("Не заполнены настройки хаба: URL, pin и токен")
+                return
+            }
+            if (cfg.isRawMode && cfg.rawCommand.isBlank()) {
+                setErrorWithAutoReset("Не задана raw-команда")
+                return
+            }
         }
 
         _proxyState.value = ProxyState.Starting

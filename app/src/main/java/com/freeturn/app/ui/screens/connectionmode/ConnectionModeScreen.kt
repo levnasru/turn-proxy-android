@@ -92,20 +92,22 @@ fun ConnectionModeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // userPickedVpn сохраняет выбор на время сессии (чтобы сегмент не мигал).
-    var userPickedVpn by remember(serverId, saved.tunnelTransport) { mutableStateOf<Boolean?>(null) }
-    val isVpn = userPickedVpn ?: (saved.tunnelTransport == TunnelTransport.WIREGUARD)
+    // userPickedMode сохраняет выбор на время сессии (чтобы сегмент не мигал).
+    var userPickedMode by remember(serverId, saved.tunnelTransport) { mutableStateOf<String?>(null) }
+    val mode = userPickedMode ?: saved.tunnelTransport
 
     val fieldsKey = serverId ?: snapshot.activeId
     var wgConfig by remember(fieldsKey) { mutableStateOf(saved.wireGuardConfig) }
     var wgName by remember(fieldsKey) { mutableStateOf(saved.wireGuardTunnelName) }
+    var xrayConfig by remember(fieldsKey) { mutableStateOf(saved.xrayConfig) }
 
-    fun persistWg(vpn: Boolean = isVpn) {
+    fun persistWg(newMode: String = mode) {
         clientEdit {
             it.copy(
-                tunnelTransport = if (vpn) TunnelTransport.WIREGUARD else TunnelTransport.NONE,
+                tunnelTransport = newMode,
                 wireGuardConfig = wgConfig.trim(),
-                wireGuardTunnelName = wgName.trim().ifBlank { TunnelTransport.DEFAULT_TUNNEL_NAME }
+                wireGuardTunnelName = wgName.trim().ifBlank { TunnelTransport.DEFAULT_TUNNEL_NAME },
+                xrayConfig = xrayConfig.trim()
             )
         }
     }
@@ -120,9 +122,10 @@ fun ConnectionModeScreen(
         if (wgDirty) return@LaunchedEffect
         wgConfig = saved.wireGuardConfig
         wgName = saved.wireGuardTunnelName
+        xrayConfig = saved.xrayConfig
     }
 
-    LaunchedEffect(fieldsKey, wgConfig, wgName) {
+    LaunchedEffect(fieldsKey, wgConfig, wgName, xrayConfig) {
         if (!wgDirty) return@LaunchedEffect
         pendingSave = true
         delay(600)
@@ -134,6 +137,8 @@ fun ConnectionModeScreen(
         onDispose { if (pendingSave) flush() }
     }
 
+    // Один пикер на оба режима - пишет в поле активного на момент вызова режима
+    // (mode пойман в замыкание через remember-состояние, читается на клик, а не тут).
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -143,7 +148,7 @@ fun ConnectionModeScreen(
                     }.getOrNull()
                 }
                 if (!text.isNullOrBlank()) {
-                    wgConfig = text
+                    if (mode == TunnelTransport.REALITY) xrayConfig = text else wgConfig = text
                     wgDirty = true
                     HapticUtil.perform(context, HapticUtil.Pattern.CLICK)
                 }
@@ -187,34 +192,47 @@ fun ConnectionModeScreen(
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalArrangement = Arrangement.spacedBy(Spacing.lg)
             ) {
+                val modes = listOf(
+                    TunnelTransport.NONE to R.string.mode_proxy,
+                    TunnelTransport.WIREGUARD to R.string.mode_vpn,
+                    TunnelTransport.REALITY to R.string.mode_reality,
+                )
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = !isVpn,
-                        onClick = {
-                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
-                            userPickedVpn = false
-                            persistWg(vpn = false)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                    ) { Text(stringResource(R.string.mode_proxy)) }
-                    SegmentedButton(
-                        selected = isVpn,
-                        onClick = {
-                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
-                            userPickedVpn = true
-                            persistWg(vpn = true)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                    ) { Text(stringResource(R.string.mode_vpn)) }
+                    modes.forEachIndexed { index, (value, labelRes) ->
+                        SegmentedButton(
+                            selected = mode == value,
+                            onClick = {
+                                HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
+                                userPickedMode = value
+                                persistWg(newMode = value)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size)
+                        ) { Text(stringResource(labelRes)) }
+                    }
                 }
 
                 Text(
-                    stringResource(if (isVpn) R.string.mode_vpn_desc else R.string.mode_proxy_desc),
+                    stringResource(
+                        when (mode) {
+                            TunnelTransport.WIREGUARD -> R.string.mode_vpn_desc
+                            TunnelTransport.REALITY -> R.string.mode_reality_desc
+                            else -> R.string.mode_proxy_desc
+                        }
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                if (isVpn) {
+                if (mode == TunnelTransport.REALITY) {
+                    RealityConfigCard(
+                        xrayConfig = xrayConfig,
+                        onXrayConfig = { xrayConfig = it; wgDirty = true },
+                        privacyMode = privacyMode,
+                        onLoadFile = { filePicker.launch("*/*") }
+                    )
+                }
+
+                if (mode == TunnelTransport.WIREGUARD) {
                     WireGuardConfigCard(
                         wgConfig = wgConfig,
                         onWgConfig = { wgConfig = it; wgDirty = true },

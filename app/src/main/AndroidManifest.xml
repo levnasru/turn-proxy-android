@@ -101,6 +101,21 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".service.RealityVpnService"
+            android:exported="false"
+            android:process=":reality"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            tools:targetApi="29">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Maintains a direct VLESS/Reality VPN tunnel (embedded Xray-core) as an alternative to the TURN-based transport." />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

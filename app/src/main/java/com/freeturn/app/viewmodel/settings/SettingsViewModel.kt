@@ -8,24 +8,18 @@ import androidx.lifecycle.viewModelScope
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.data.backup.BackupCrypto
 import com.freeturn.app.data.config.ClientConfig
-import com.freeturn.app.data.config.ObfProfile
-import com.freeturn.app.data.control.UninstallData
 import com.freeturn.app.data.server.Server
 import com.freeturn.app.data.server.ServersSnapshot
+import com.freeturn.app.data.server.Subscription
+import com.freeturn.app.domain.subscription.XraySubscriptionFetcher
 import com.freeturn.app.domain.backup.BackupManager
 import com.freeturn.app.domain.update.AppUpdater
 import com.freeturn.app.domain.proxy.LocalProxyManager
 import com.freeturn.app.domain.proxy.ProxyOrchestrator
-import com.freeturn.app.domain.server.ServerSetupRepository
-import com.freeturn.app.domain.ssh.SshRepository
-import com.freeturn.app.viewmodel.uiError
 import com.freeturn.app.domain.UpdateState
 import com.freeturn.app.domain.proxy.ProxyServiceState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,25 +31,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 
-sealed interface ServerCleanupState {
-    data object Idle : ServerCleanupState
-    data object Running : ServerCleanupState
-    data class Done(val data: UninstallData) : ServerCleanupState
-    data class Error(val message: String) : ServerCleanupState
+sealed interface SubscriptionSyncState {
+    data object Idle : SubscriptionSyncState
+    data object Running : SubscriptionSyncState
+    data class Done(val added: Int, val updated: Int, val removed: Int) : SubscriptionSyncState
+    data class Error(val message: String) : SubscriptionSyncState
 }
 
 class SettingsViewModel(
     private val prefs: AppPreferences,
     private val proxyManager: LocalProxyManager,
-    private val sshRepository: SshRepository,
-    private val serverSetup: ServerSetupRepository,
     private val appUpdater: AppUpdater,
     private val orchestrator: ProxyOrchestrator,
     private val backupManager: BackupManager,
+    private val subscriptionFetcher: XraySubscriptionFetcher,
     context: Context
 ) : ViewModel() {
 
@@ -82,6 +73,12 @@ class SettingsViewModel(
     val serversSnapshot: StateFlow<ServersSnapshot> = prefs.serversSnapshot
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ServersSnapshot())
 
+    val subscriptions: StateFlow<List<Subscription>> = prefs.subscriptionsSnapshot
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _subscriptionSyncState = MutableStateFlow<SubscriptionSyncState>(SubscriptionSyncState.Idle)
+    val subscriptionSyncState: StateFlow<SubscriptionSyncState> = _subscriptionSyncState.asStateFlow()
+
     val updateState: StateFlow<UpdateState> = appUpdater.state
 
     private val _isInitialized = MutableStateFlow(false)
@@ -103,16 +100,8 @@ class SettingsViewModel(
     val privacyMode: StateFlow<Boolean> = prefs.privacyModeFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val restartServerOnSwitch: StateFlow<Boolean> = prefs.restartServerOnSwitchFlow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-
     // Ожидаем DataStore, чтобы дефолт StateFlow не пропустил диалог первой сессии.
     suspend fun batteryPromptShownOnce(): Boolean = prefs.batteryPromptShownFlow.first()
-
-    // Persist мгновенный; сетевые рестарты коалесцируются.
-    private val syncSideEffectMutex = Mutex()
-    private var syncSideEffectJob: Job? = null
-    private val syncSideEffectDebounceMs = 600L
 
     init {
         viewModelScope.launch {
@@ -128,10 +117,6 @@ class SettingsViewModel(
 
     fun setPrivacyMode(enabled: Boolean) {
         viewModelScope.launch { prefs.setPrivacyMode(enabled) }
-    }
-
-    fun setRestartServerOnSwitch(enabled: Boolean) {
-        viewModelScope.launch { prefs.setRestartServerOnSwitch(enabled) }
     }
 
     fun setDynamicTheme(enabled: Boolean) {
@@ -199,6 +184,46 @@ class SettingsViewModel(
         }
     }
 
+    /** Создаёт подписку и сразу тянет её ноды - первый импорт списком, не пустышкой. */
+    fun addSubscription(name: String, url: String) {
+        viewModelScope.launch {
+            _subscriptionSyncState.value = SubscriptionSyncState.Running
+            val subscription = Subscription(name = name, url = url)
+            val id = prefs.addSubscription(subscription)
+            syncSubscription(id, url)
+        }
+    }
+
+    fun refreshSubscription(id: String) {
+        val subscription = subscriptions.value.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            _subscriptionSyncState.value = SubscriptionSyncState.Running
+            syncSubscription(id, subscription.url)
+        }
+    }
+
+    private suspend fun syncSubscription(id: String, url: String) {
+        _subscriptionSyncState.value = try {
+            val nodes = subscriptionFetcher.fetch(url)
+            if (nodes.isEmpty()) {
+                SubscriptionSyncState.Error("Подписка не вернула ни одной ноды")
+            } else {
+                val result = prefs.syncSubscriptionServers(id, nodes)
+                SubscriptionSyncState.Done(result.added, result.updated, result.removed)
+            }
+        } catch (e: Exception) {
+            SubscriptionSyncState.Error(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    fun clearSubscriptionSyncState() {
+        _subscriptionSyncState.value = SubscriptionSyncState.Idle
+    }
+
+    fun deleteSubscription(id: String) {
+        viewModelScope.launch { prefs.deleteSubscription(id) }
+    }
+
     fun renameServer(id: String, name: String) {
         viewModelScope.launch { prefs.renameServer(id, name) }
     }
@@ -212,40 +237,12 @@ class SettingsViewModel(
             val target = prefs.serversSnapshot.first().list.firstOrNull { it.id == id }
                 ?: return@launch
             prefs.setActiveServerId(target.id)
-
-            if (prefs.restartServerOnSwitchFlow.first()) {
-                orchestrator.restartServerIfRunning()
-            }
-
-            sshRepository.activeSshConfig?.let { prev ->
-                if (prev.ip != target.ssh.ip || prev.port != target.ssh.port) {
-                    sshRepository.disconnect()
-                }
-            }
-
             orchestrator.restartProxyIfRunning()
         }
     }
 
-    private val _cleanupState = MutableStateFlow<ServerCleanupState>(ServerCleanupState.Idle)
-    val cleanupState: StateFlow<ServerCleanupState> = _cleanupState.asStateFlow()
-
-    fun resetCleanupState() { _cleanupState.value = ServerCleanupState.Idle }
-
     fun deleteServer(id: String) {
         viewModelScope.launch { prefs.deleteServer(id) }
-    }
-
-    fun cleanupServer(id: String) {
-        viewModelScope.launch {
-            val cfg = serversSnapshot.value.list.firstOrNull { it.id == id }?.ssh ?: return@launch
-            _cleanupState.value = ServerCleanupState.Running
-            // Перед удалением обновляем rootMode: сохранённое значение могло устареть.
-            val mode = serverSetup.detectRootMode(cfg) ?: cfg.rootMode
-            serverSetup.uninstall(cfg.copy(rootMode = mode), withWgPkg = true)
-                .onSuccess { _cleanupState.value = ServerCleanupState.Done(it) }
-                .onFailure { _cleanupState.value = ServerCleanupState.Error(it.uiError(appContext)) }
-        }
     }
 
     fun updateServerClient(id: String, transform: (ClientConfig) -> ClientConfig) {
@@ -271,88 +268,6 @@ class SettingsViewModel(
         viewModelScope.launch {
             prefs.updateActiveServer {
                 it.copy(client = it.client.copy(vkLink = link.trim()))
-            }
-        }
-    }
-
-    fun setSyncServerSwitches(enabled: Boolean) {
-        viewModelScope.launch {
-            val changed = prefs.updateActiveServer {
-                it.copy(client = it.client.copy(syncServerSwitches = enabled))
-            }
-            if (!changed) return@launch
-            // NonCancellable не даёт новому переключению оборвать SSH-команду на полпути.
-            syncSideEffectJob?.cancel()
-            syncSideEffectJob = viewModelScope.launch {
-                delay(syncSideEffectDebounceMs)
-                syncSideEffectMutex.withLock {
-                    if (!prefs.clientConfigFlow.first().syncServerSwitches) return@withLock
-                    withContext(NonCancellable) {
-                        orchestrator.restartServerIfRunning()
-                        orchestrator.restartProxyIfRunning()
-                    }
-                }
-            }
-        }
-    }
-
-    // Одна транзакция и один рестарт сохраняют атомарность apply-модели.
-    fun applyServerConfig(
-        listen: String,
-        connect: String,
-        tcpForward: Boolean,
-        obfProfile: String,
-        obfKey: String
-    ) {
-        viewModelScope.launch {
-            val sync = prefs.clientConfigFlow.first().syncServerSwitches
-            val trimmedKey = obfKey.trim()
-            val changed = prefs.updateActiveServer { s ->
-                val effKey = trimmedKey.ifBlank {
-                    s.opts.obfKey.ifBlank {
-                        if (obfProfile != ObfProfile.NONE) ObfProfile.generateKey() else ""
-                    }
-                }
-                s.copy(
-                    proxyListen = listen,
-                    proxyConnect = connect,
-                    client = s.client.copy(tcpForward = tcpForward),
-                    opts = s.opts.copy(obfProfile = obfProfile, obfKey = effKey)
-                )
-            }
-            if (changed) {
-                if (sync) {
-                    orchestrator.restartServerIfRunning()
-                } else {
-                    sshRepository.logNote("рестарт сервера пропущен: синхронизация выключена")
-                }
-                orchestrator.restartProxyIfRunning()
-            }
-        }
-    }
-
-    // Неактивный сервер обновляется без вмешательства в рантайм активного.
-    fun updateServerConfig(
-        id: String,
-        listen: String,
-        connect: String,
-        tcpForward: Boolean,
-        obfProfile: String,
-        obfKey: String
-    ) {
-        viewModelScope.launch {
-            prefs.updateServer(id) { target ->
-                val effKey = obfKey.trim().ifBlank {
-                    target.opts.obfKey.ifBlank {
-                        if (obfProfile != ObfProfile.NONE) ObfProfile.generateKey() else ""
-                    }
-                }
-                target.copy(
-                    proxyListen = listen,
-                    proxyConnect = connect,
-                    client = target.client.copy(tcpForward = tcpForward),
-                    opts = target.opts.copy(obfProfile = obfProfile, obfKey = effKey)
-                )
             }
         }
     }
@@ -406,7 +321,6 @@ class SettingsViewModel(
                 val data = backupManager.decode(bytes, password)
                 if (ProxyServiceState.isRunning.value) proxyManager.stopProxy()
                 val count = backupManager.restore(data)
-                sshRepository.resetAll()
                 proxyManager.clearState()
                 ProxyServiceState.clearLogs()
                 BackupEvent.RestoreSuccess(count)
@@ -429,7 +343,6 @@ class SettingsViewModel(
                 proxyManager.stopProxy()
             }
             prefs.resetAll()
-            sshRepository.resetAll()
             proxyManager.clearState()
             ProxyServiceState.clearLogs()
 

@@ -2,6 +2,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.application)
@@ -105,11 +106,13 @@ composeCompiler {
 
 dependencies {
     implementation(libs.androidx.core.splashscreen)
-    implementation(libs.jsch)
     implementation(libs.bouncycastle)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.wireguard.tunnel)
+    // libXray.aar - официальная обёртка XTLS/libXray над xray-core (gomobile bind),
+    // прибит локально (не в Maven). REALITY-режим (см. TunnelTransport.REALITY).
+    implementation(files("libs/libXray.aar"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -349,3 +352,142 @@ val coreFetchHook = when (providers.gradleProperty("coreFetch").orNull ?: "relea
 if (coreFetchHook != null) {
     tasks.matching { it.name == coreFetchHook }.configureEach { dependsOn(fetchFreeturnCore) }
 }
+
+/**
+ * Тянет libXray.aar (XTLS/libXray, gomobile bind над xray-core) из релизов
+ * xtls/libXray. Нужен для Reality-транспорта (RealityVpnService) - без него
+ * сборка падает на debugRuntimeClasspath ещё до компиляции, для ЛЮБОГО
+ * варианта (implementation(files(...)) не гейтится по типу сборки, в
+ * отличие от нативного ядра). Ассет релиза - libxray-android.zip, внутри
+ * libxray-android/libXray.aar.
+ */
+abstract class FetchLibXray : DefaultTask() {
+    @get:Input
+    abstract val repo: Property<String>
+
+    /** "latest" или конкретный тег ("v26.7.28"). */
+    @get:Input
+    abstract val version: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val token: Property<String>
+
+    /** Вне build/ - переживает clean, общий на все проекты. */
+    @get:Internal
+    abstract val cacheDir: DirectoryProperty
+
+    @get:OutputFile
+    abstract val aarFile: RegularFileProperty
+
+    @TaskAction
+    fun fetch() {
+        val dst = aarFile.get().asFile
+        val stamp = File(dst.parentFile, ".libxray-version")
+        val installed = if (stamp.isFile) stamp.readText().trim() else null
+
+        val tag = try {
+            resolveTag()
+        } catch (e: Exception) {
+            // Оффлайн со скачанным aar - не повод ронять сборку
+            if (dst.isFile && installed != null) {
+                logger.warn("libXray: не удалось узнать версию (${e.message}), оставляю $installed")
+                return
+            }
+            throw GradleException("libXray: не удалось определить версию из ${repo.get()}: ${e.message}", e)
+        }
+
+        if (tag == installed && dst.isFile) {
+            didWork = false
+            return
+        }
+
+        val cache = File(cacheDir.get().asFile, tag).apply { mkdirs() }
+        val zip = cachedFile(
+            File(cache, "libxray-android.zip"),
+            "https://github.com/${repo.get()}/releases/download/$tag/libxray-android.zip"
+        )
+
+        dst.parentFile.mkdirs()
+        ZipFile(zip).use { zf ->
+            val entry = zf.entries().asSequence().firstOrNull { it.name.endsWith("libXray.aar") }
+                ?: throw GradleException("libXray: libXray.aar не найден внутри $zip")
+            zf.getInputStream(entry).use { input -> dst.outputStream().use { input.copyTo(it) } }
+        }
+
+        stamp.writeText(tag)
+        logger.lifecycle("libXray: $tag -> ${dst.path}")
+    }
+
+    private fun resolveTag(): String {
+        val v = version.get().trim()
+        if (!v.equals("latest", ignoreCase = true)) return if (v.startsWith("v")) v else "v$v"
+        val json = String(
+            httpGet("https://api.github.com/repos/${repo.get()}/releases/latest", "application/vnd.github+json"),
+            Charsets.UTF_8
+        )
+        return Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+            ?: throw GradleException("нет tag_name в ответе GitHub API")
+    }
+
+    private fun cachedFile(dest: File, url: String): File {
+        if (dest.isFile && dest.length() > 0) return dest
+        val tmp = File(dest.parentFile, "${dest.name}.part")
+        tmp.writeBytes(httpGet(url, "application/octet-stream"))
+        tmp.renameTo(dest)
+        return dest
+    }
+
+    private fun httpGet(url: String, accept: String): ByteArray {
+        var current = URI(url).toURL()
+        repeat(6) {
+            val conn = (current.openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                connectTimeout = 30_000
+                readTimeout = 300_000
+                setRequestProperty("Accept", accept)
+                setRequestProperty("User-Agent", "freeturn-android-build")
+                // Токен только на github.com - на редиректе в CDN он ломает подписанный URL
+                val t = token.orNull
+                if (!t.isNullOrBlank() && current.host.endsWith("github.com")) {
+                    setRequestProperty("Authorization", "Bearer $t")
+                }
+            }
+            try {
+                when (val code = conn.responseCode) {
+                    in 200..299 -> return conn.inputStream.use { it.readBytes() }
+                    301, 302, 303, 307, 308 -> {
+                        val loc = conn.getHeaderField("Location")
+                            ?: throw GradleException("редирект без Location на $current")
+                        current = URI(current.toURI().resolve(loc).toString()).toURL()
+                    }
+                    else -> throw GradleException("HTTP $code на $current")
+                }
+            } finally {
+                conn.disconnect()
+            }
+        }
+        throw GradleException("слишком много редиректов на $url")
+    }
+}
+
+val fetchLibXray = tasks.register<FetchLibXray>("fetchLibXray") {
+    description = "Качает libXray.aar из релизов xtls/libXray"
+    group = "build"
+    repo.set(providers.gradleProperty("libxrayRepo").orElse("xtls/libXray"))
+    version.set(
+        providers.gradleProperty("libxrayVersion")
+            .orElse(providers.environmentVariable("LIBXRAY_VERSION"))
+            .orElse("latest")
+    )
+    token.set(providers.environmentVariable("GITHUB_TOKEN"))
+    cacheDir.set(layout.dir(provider { File(gradle.gradleUserHomeDir, "caches/libxray") }))
+    aarFile.set(layout.projectDirectory.file("libs/libXray.aar"))
+    // Версия резолвится в рантайме - актуальность решает stamp-файл внутри таски
+    outputs.upToDateWhen { false }
+}
+
+// В отличие от ядра, libXray нужен КАЖДОЙ сборке (в т.ч. unit-тестам - они
+// резолвят весь debugRuntimeClasspath) и никем руками не подкладывается,
+// кроме как через эту таску - поэтому хук безусловный, без coreFetch-подобного тумблера.
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(fetchLibXray) }

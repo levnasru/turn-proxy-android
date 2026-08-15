@@ -102,6 +102,18 @@
     <string name="add_restore_desc">Загрузить резервную копию</string>
     <string name="add_from_qr_title">QR-код</string>
     <string name="add_from_qr_desc">Отсканировать код с экрана</string>
+    <string name="add_subscription_title">Xray-подписка</string>
+    <string name="add_subscription_desc">Список серверов по URL подписки (3x-ui и т.п.)</string>
+    <string name="add_subscription_name_label">Название подписки</string>
+    <string name="add_subscription_url_label">URL подписки</string>
+    <string name="add_subscription_create">Добавить</string>
+    <string name="subscription_sync_error">Ошибка подписки: %1$s</string>
+    <string name="subscription_sync_done">Подписка обновлена: +%1$d, изменено %2$d, удалено %3$d</string>
+    <string name="subscription_refresh">Обновить подписку</string>
+    <string name="subscription_delete">Удалить подписку</string>
+    <string name="subscription_group_manual">Личные</string>
+    <string name="server_group_vk_turn">VK-TURN</string>
+    <string name="server_group_xray">Xray</string>
     <string name="add_soon_badge">Скоро</string>
     <string name="add_default_server_name">Новый сервер</string>
 
@@ -484,9 +496,14 @@
     <string name="provider_connection_mode_desc">Proxy или VPN (WireGuard), импорт конфига</string>
     <string name="mode_proxy">Прокси</string>
     <string name="mode_vpn">VPN</string>
+    <string name="mode_reality">Reality</string>
     <string name="mode_proxy_desc">Трафик идёт через локальный прокси, без туннеля.</string>
     <string name="mode_vpn_desc">Весь трафик устройства туннелируется через WireGuard.</string>
+    <string name="mode_reality_desc">Прямое VLESS+Reality-подключение (как в отдельном v2ray/Xray) — без нашего TURN-транспорта, весь трафик через отдельный VPN-туннель.</string>
     <string name="load_wg_conf">Загрузить из файла</string>
+    <string name="load_xray_json">Загрузить из файла</string>
+    <string name="setup_xray_json_label">Конфиг Xray-core (JSON)</string>
+    <string name="setup_xray_json_placeholder">{\"outbounds\":[…],\"inbounds\":[…]}</string>
     <string name="connection_config_section">Конфигурация туннеля</string>
     <string name="change_server">Сменить сервер</string>
 

@@ -8,4 +8,9 @@ object ProxyActions {
     /** Кнопка WG: поднять/погасить туннель поверх живого ядра. Флаг [EXTRA_WG_ENABLED]. */
     const val SET_WIREGUARD = "com.freeturn.app.SET_WIREGUARD"
     const val EXTRA_WG_ENABLED = "wg_enabled"
+
+    /** Готовый Xray-конфиг для запуска RealityVpnService - передаётся интентом, а не
+     * перечитывается сервисом из DataStore, т.к. :reality может закэшировать процесс
+     * между сессиями (см. AndroidProxyServiceLauncher.start()). */
+    const val EXTRA_XRAY_CONFIG = "xray_config"
 }

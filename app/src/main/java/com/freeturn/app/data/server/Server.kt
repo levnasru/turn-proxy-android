@@ -1,21 +1,23 @@
 package com.freeturn.app.data.server
 
 import com.freeturn.app.data.config.ClientConfig
-import com.freeturn.app.data.config.SshConfig
 import java.util.UUID
 
 /**
- * Именованный сервер: SSH-доступ + клиентские параметры + серверные опции.
+ * Именованный сервер: клиентские параметры + серверные опции.
  * Список сериализуется в DataStore (SERVERS_JSON) через [ServerJson].
  */
 data class Server(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    val ssh: SshConfig = SshConfig(),
     val client: ClientConfig = ClientConfig(),
     val proxyListen: String = "0.0.0.0:56000",
     val proxyConnect: String = "127.0.0.1:40537",
-    val opts: ServerOpts = ServerOpts()
+    val opts: ServerOpts = ServerOpts(),
+    /** Id [Subscription], если сервер пришёл из Xray-подписки. Пусто - VK-TURN или личный Reality-конфиг. */
+    val subscriptionId: String = "",
+    /** Стабильный идентификатор ноды внутри подписки (не зависит от имени) - ключ для diff при обновлении. */
+    val subscriptionNodeKey: String = ""
 ) {
     companion object {
         /** Имя-заглушка для записей без имени (data-слой, ресурсы недоступны). */
