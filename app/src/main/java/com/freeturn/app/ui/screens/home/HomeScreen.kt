@@ -251,7 +251,7 @@ fun HomeScreen(
         SplitTunnelModal(
             mode = clientConfig.splitTunnelMode,
             apps = clientConfig.splitTunnelApps,
-            locked = proxyState !is ProxyState.Idle && proxyState !is ProxyState.Error,
+            locked = wireGuardUp,
             onModeChange = settingsViewModel::setSplitTunnelMode,
             onAppsChange = settingsViewModel::setSplitTunnelApps,
             onDismiss = { showSplitSheet.value = false },
