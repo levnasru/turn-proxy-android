@@ -22,6 +22,7 @@ import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
@@ -47,6 +48,20 @@ class CoreProcessController(
         private const val WIREGUARD_START_DELAY_MS = 2_000L
         // Ядро на SIGTERM закрывает стримы и ждёт до 5 с (cmd/client/main.go). Даём чуть больше.
         private const val GRACEFUL_STOP_TIMEOUT_MS = 6_000L
+        // NetworkHandoverMonitor шлёт ДВА onNetworkHandover() на одну реальную смену сети
+        // (физический монитор + default-route монитор, каждый со своим 2с debounce,
+        // независимо сработавшие) - живой замер 2026-08-16 (adb wifi toggle x3, 40-стримовый
+        // профиль) показал их ~2.2с друг за другом на каждый тоггл. Без кулдауна второй
+        // handover рвёт стримы, которые первый только-только начал поднимать (реконнект
+        // всех N стримов идёт по ~200-300мс на стрим, т.е. секунды) - на фликающей сети это
+        // не даёт SESSION вообще стабилизироваться (WG/статус показывают "подключено" сразу
+        // после первого стрима, но остальные N-1 не успевают до следующего обрыва). Кулдаун
+        // поглощает двойной триггер одной транзакции и не мешает разнесённым по времени
+        // реальным сменам сети (секунды-минуты в норме).
+        // ponytail: фиксированное значение, не пропорционально N стримов профиля - для
+        // профилей сильно больше 40 стримов реконнект может не уложиться в окно; поднять
+        // константу, если появятся такие профили и живой замер это подтвердит.
+        private const val HANDOVER_COOLDOWN_MS = 5_000L
     }
 
     private val wireGuard = WireGuardTunnelManager(context)
@@ -63,6 +78,9 @@ class CoreProcessController(
     // этого флага принимает 0 за "сессия закончилась" и останавливает сервис вместо рестарта.
     private val restartInFlight = AtomicBoolean(false)
     private val restartCount = AtomicInteger(0)
+    // elapsedRealtime до которого игнорируем повторные onNetworkHandover() - см.
+    // HANDOVER_COOLDOWN_MS.
+    private val handoverCooldownUntil = AtomicLong(0)
     // Single-flight: двойной старт (tile+UI/watchdog) затёр бы первый процесс -> зомби.
     private val startInFlight = AtomicBoolean(false)
 
@@ -117,6 +135,12 @@ class CoreProcessController(
     fun onNetworkHandover() {
         val proc = process.get()
         if (userStopped.get() || proc == null) return
+        val now = SystemClock.elapsedRealtime()
+        if (now < handoverCooldownUntil.get()) {
+            ProxyServiceState.addLog("Смена сети - повтор в кулдауне, игнорирую")
+            return
+        }
+        handoverCooldownUntil.set(now + HANDOVER_COOLDOWN_MS)
         ProxyServiceState.addLog("Смена сети - переподключение")
         notifier.setStatus(context.getString(R.string.notif_proxy_network_change))
         restartCount.set(0)
