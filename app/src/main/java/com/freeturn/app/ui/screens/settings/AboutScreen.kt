@@ -91,7 +91,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
                 SectionLabel(stringResource(R.string.about_links))
                 SettingsGroup {
-                    SettingsGroupItem(0, 4) {
+                    SettingsGroupItem(0, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.code_24px,
                             title = stringResource(R.string.android_client),
@@ -101,7 +101,7 @@ fun AboutScreen(onBack: () -> Unit) {
                             onClick = { open("https://github.com/levnasru/turn-proxy-android") }
                         )
                     }
-                    SettingsGroupItem(1, 4) {
+                    SettingsGroupItem(1, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.terminal_24px,
                             title = stringResource(R.string.proxy_core),
@@ -111,7 +111,7 @@ fun AboutScreen(onBack: () -> Unit) {
                             onClick = { open("https://github.com/levnasru/free-turn-proxy") }
                         )
                     }
-                    SettingsGroupItem(2, 4) {
+                    SettingsGroupItem(2, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.code_24px,
                             title = "Оригинальный проект",
@@ -121,13 +121,23 @@ fun AboutScreen(onBack: () -> Unit) {
                             onClick = { open("https://github.com/samosvalishe/turn-proxy-android") }
                         )
                     }
-                    SettingsGroupItem(3, 4) {
+                    SettingsGroupItem(3, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.public_24px,
                             title = stringResource(R.string.tg_channel),
                             trailingRes = R.drawable.open_in_new_24px,
                             trailingTint = MaterialTheme.colorScheme.primary,
                             onClick = { open("https://t.me/bibika1997") }
+                        )
+                    }
+                    SettingsGroupItem(4, 5) {
+                        SettingsEntryRow(
+                            iconRes = R.drawable.link_24px,
+                            title = stringResource(R.string.personal_website),
+                            subtitle = "levnas.ru",
+                            trailingRes = R.drawable.open_in_new_24px,
+                            trailingTint = MaterialTheme.colorScheme.primary,
+                            onClick = { open("https://levnas.ru") }
                         )
                     }
                 }
