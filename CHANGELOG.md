@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.2](https://github.com/levnasru/turn-proxy-android/compare/v3.6.1...v3.6.2) (2026-08-24)
+
+
+### Fixes
+
+* **speedmonitor:** display speed was 3x inflated, missing /interval ([e59bce2](https://github.com/levnasru/turn-proxy-android/commit/e59bce25979ba2ebaee8b5967fd88bf4009c1829))
+
 ## [3.6.1](https://github.com/levnasru/turn-proxy-android/compare/v3.6.0...v3.6.1) (2026-08-24)
 
 
