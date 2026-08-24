@@ -56,7 +56,14 @@ class ProxyService : Service() {
         speedMonitor = SpeedMonitor(
             scope = serviceScope,
             isStopped = { controller.isUserStopped },
-            onSpeed = { notifier.setSpeed(it) },
+            // TrafficStats считает по UID процесса, не по интерфейсу тоннеля - без гейта
+            // нотификация показывает "скорость", даже когда ядро не держит ни одного потока
+            // (WG выключен, VK-стримы упали) - это просто фоновый HTTP-трафик приложения.
+            onSpeed = { speed ->
+                val tunnelActive = ProxyServiceState.isRunning.value &&
+                    ProxyServiceState.connectionStats.value.active > 0
+                notifier.setSpeed(if (tunnelActive) speed else "")
+            },
         )
         socketProtector = UnixSocketProtector(applicationContext)
         // Socks5Server не поднимаем: свой пакет всегда в ExcludedApplications, исходящие
