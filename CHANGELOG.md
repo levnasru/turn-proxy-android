@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.1](https://github.com/levnasru/turn-proxy-android/compare/v3.6.0...v3.6.1) (2026-08-24)
+
+
+### Fixes
+
+* rebuild against free-turn-proxy v2.3.2 (WG-endpoint-flapping fix) ([0c54a9e](https://github.com/levnasru/turn-proxy-android/commit/0c54a9ee0c222ec3d4fe89e3d5c50666079b5fb2))
+
 ## [3.6.0](https://github.com/levnasru/turn-proxy-android/compare/v3.5.4...v3.6.0) (2026-08-24)
 
 
