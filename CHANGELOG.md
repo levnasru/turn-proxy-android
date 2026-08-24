@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.6.0](https://github.com/levnasru/turn-proxy-android/compare/v3.5.4...v3.6.0) (2026-08-24)
+
+
+### Features
+
+* **portal:** self-service login on Android — password auth like desktop ([7a0720b](https://github.com/levnasru/turn-proxy-android/commit/7a0720b13bec43d5395c43560c00ef5ae6bd033a))
+
+
+### Fixes
+
+* **notification:** gate speed display on the tunnel actually being active ([66a258e](https://github.com/levnasru/turn-proxy-android/commit/66a258e83f703e32bd7f76aa0ecd1adc4eeec25a))
+
 ## [3.5.3](https://github.com/levnasru/turn-proxy-android/compare/v3.5.2...v3.5.3) (2026-08-09)
 
 
