@@ -25,7 +25,7 @@ android {
         // WireGuard GoBackend (com.wireguard.android:tunnel) требует minSdk 24.
         minSdk = 24
         targetSdk = 37
-        versionName = "levnasru-3.5.4-beta" // x-release-please-version
+        versionName = "levnasru-3.6.0" // x-release-please-version
         // Производный от versionName (M*10000+m*100+p) - release-please бампит только строку версии.
         // filter/takeWhile digits: форк добавляет нечисловые префикс ("levnasru-") и суффикс ("-beta").
         versionCode = versionName!!.split(".").let { (ma, mi, pa) ->
