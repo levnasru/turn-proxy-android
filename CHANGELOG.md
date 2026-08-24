@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.3](https://github.com/levnasru/turn-proxy-android/compare/v3.6.2...v3.6.3) (2026-08-24)
+
+
+### Fixes
+
+* rebuild against free-turn-proxy v2.3.3 (rotation-timing fix) ([735d21d](https://github.com/levnasru/turn-proxy-android/commit/735d21dec7954523ed7b8f272b18c0b10fa9453e))
+
 ## [3.6.2](https://github.com/levnasru/turn-proxy-android/compare/v3.6.1...v3.6.2) (2026-08-24)
 
 
