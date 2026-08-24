@@ -7,4 +7,12 @@
     <string name="hub_token_label">Токен доступа (если требуется)</string>
     <string name="hub_token_placeholder">Секретный токен</string>
     <string name="hub_inject_cache_quick_action">Вставить кэш/токен</string>
+
+    <string name="add_portal_login_title">Войти по логину</string>
+    <string name="add_portal_login_desc">Self-service вход на семейный портал — заведёт готовый профиль без файла</string>
+    <string name="portal_login_username_label">Логин</string>
+    <string name="portal_login_password_label">Пароль</string>
+    <string name="portal_login_confirm">Войти</string>
+    <string name="portal_login_success">Профиль «%1$s» создан и активирован</string>
+    <string name="portal_login_error">Не удалось войти: %1$s</string>
 </resources>

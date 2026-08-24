@@ -50,6 +50,7 @@ import com.freeturn.app.ui.components.SettingsGroup
 import com.freeturn.app.ui.components.SettingsGroupItem
 import com.freeturn.app.ui.screens.settings.backupEventMessage
 import com.freeturn.app.ui.theme.Spacing
+import com.freeturn.app.viewmodel.settings.PortalLoginState
 import com.freeturn.app.viewmodel.settings.SettingsViewModel
 import com.freeturn.app.viewmodel.settings.SubscriptionSyncState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -72,6 +73,7 @@ fun AddServerScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showManualDialog by rememberSaveable { mutableStateOf(false) }
     var showSubscriptionDialog by rememberSaveable { mutableStateOf(false) }
+    var showPortalLoginDialog by rememberSaveable { mutableStateOf(false) }
     var showRestoreDialog by rememberSaveable { mutableStateOf(false) }
     var restoreUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
@@ -110,6 +112,21 @@ fun AddServerScreen(
                     context.getString(R.string.subscription_sync_error, s.message)
                 )
                 settingsViewModel.clearSubscriptionSyncState()
+            }
+            else -> {}
+        }
+    }
+
+    val portalLoginState by settingsViewModel.portalLoginState.collectAsStateWithLifecycle()
+    LaunchedEffect(portalLoginState) {
+        when (val s = portalLoginState) {
+            is PortalLoginState.Done -> {
+                snackbarHostState.showSnackbar(context.getString(R.string.portal_login_success, s.serverName))
+                settingsViewModel.clearPortalLoginState()
+            }
+            is PortalLoginState.Error -> {
+                snackbarHostState.showSnackbar(context.getString(R.string.portal_login_error, s.message))
+                settingsViewModel.clearPortalLoginState()
             }
             else -> {}
         }
@@ -158,7 +175,15 @@ fun AddServerScreen(
                 SectionLabel(stringResource(R.string.add_methods_section))
                 Spacer(Modifier.height(8.dp))
                 SettingsGroup {
-                    SettingsGroupItem(0, 4) {
+                    SettingsGroupItem(0, 5) {
+                        SettingsEntryRow(
+                            iconRes = R.drawable.vpn_key_24px,
+                            title = stringResource(R.string.add_portal_login_title),
+                            subtitle = stringResource(R.string.add_portal_login_desc),
+                            onClick = { showPortalLoginDialog = true }
+                        )
+                    }
+                    SettingsGroupItem(1, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.tune_24px,
                             title = stringResource(R.string.add_manual_title),
@@ -166,7 +191,7 @@ fun AddServerScreen(
                             onClick = { showManualDialog = true }
                         )
                     }
-                    SettingsGroupItem(1, 4) {
+                    SettingsGroupItem(2, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.cloud_download_24px,
                             title = stringResource(R.string.add_subscription_title),
@@ -174,7 +199,7 @@ fun AddServerScreen(
                             onClick = { showSubscriptionDialog = true }
                         )
                     }
-                    SettingsGroupItem(2, 4) {
+                    SettingsGroupItem(3, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.qr_code_scanner_24px,
                             title = stringResource(R.string.add_from_qr_title),
@@ -182,7 +207,7 @@ fun AddServerScreen(
                             onClick = onScanQr
                         )
                     }
-                    SettingsGroupItem(3, 4) {
+                    SettingsGroupItem(4, 5) {
                         SettingsEntryRow(
                             iconRes = R.drawable.description_24px,
                             title = stringResource(R.string.add_restore_title),
@@ -202,6 +227,16 @@ fun AddServerScreen(
                 settingsViewModel.addSubscription(name, url)
             },
             onDismiss = { showSubscriptionDialog = false }
+        )
+    }
+
+    if (showPortalLoginDialog) {
+        PortalLoginDialog(
+            onConfirm = { username, password ->
+                showPortalLoginDialog = false
+                settingsViewModel.loginToPortal(username, password)
+            },
+            onDismiss = { showPortalLoginDialog = false }
         )
     }
 

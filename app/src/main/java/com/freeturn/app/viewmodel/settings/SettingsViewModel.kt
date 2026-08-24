@@ -8,10 +8,14 @@ import androidx.lifecycle.viewModelScope
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.data.backup.BackupCrypto
 import com.freeturn.app.data.config.ClientConfig
+import com.freeturn.app.data.config.ObfProfile
+import com.freeturn.app.data.config.Provider
 import com.freeturn.app.data.server.Server
+import com.freeturn.app.data.server.ServerOpts
 import com.freeturn.app.data.server.ServersSnapshot
 import com.freeturn.app.data.server.Subscription
 import com.freeturn.app.domain.subscription.XraySubscriptionFetcher
+import com.freeturn.app.domain.portal.PortalApiClient
 import com.freeturn.app.domain.backup.BackupManager
 import com.freeturn.app.domain.update.AppUpdater
 import com.freeturn.app.domain.proxy.LocalProxyManager
@@ -40,6 +44,13 @@ sealed interface SubscriptionSyncState {
     data class Error(val message: String) : SubscriptionSyncState
 }
 
+sealed interface PortalLoginState {
+    data object Idle : PortalLoginState
+    data object Running : PortalLoginState
+    data class Done(val serverName: String) : PortalLoginState
+    data class Error(val message: String) : PortalLoginState
+}
+
 class SettingsViewModel(
     private val prefs: AppPreferences,
     private val proxyManager: LocalProxyManager,
@@ -47,6 +58,7 @@ class SettingsViewModel(
     private val orchestrator: ProxyOrchestrator,
     private val backupManager: BackupManager,
     private val subscriptionFetcher: XraySubscriptionFetcher,
+    private val portalApi: PortalApiClient,
     context: Context
 ) : ViewModel() {
 
@@ -78,6 +90,9 @@ class SettingsViewModel(
 
     private val _subscriptionSyncState = MutableStateFlow<SubscriptionSyncState>(SubscriptionSyncState.Idle)
     val subscriptionSyncState: StateFlow<SubscriptionSyncState> = _subscriptionSyncState.asStateFlow()
+
+    private val _portalLoginState = MutableStateFlow<PortalLoginState>(PortalLoginState.Idle)
+    val portalLoginState: StateFlow<PortalLoginState> = _portalLoginState.asStateFlow()
 
     val updateState: StateFlow<UpdateState> = appUpdater.state
 
@@ -218,6 +233,51 @@ class SettingsViewModel(
 
     fun clearSubscriptionSyncState() {
         _subscriptionSyncState.value = SubscriptionSyncState.Idle
+    }
+
+    /**
+     * Self-service вход (тот же /api/v1/login + /api/v1/config?device=android
+     * на vkturn-ios-portal, что уже использует vkturn-desktop) - заводит НОВЫЙ
+     * профиль-сервер из полученных hub-кредов, тем же путём, что ImportViewModel
+     * заводит профиль из freeturn://-ссылки (Server(client, opts) + addServer).
+     * Не трогает WireGuard - full-tunnel для Android по-прежнему через
+     * panel.js/.fabackup (см. User.AndroidAccounts на портале).
+     */
+    fun loginToPortal(username: String, password: String) {
+        viewModelScope.launch {
+            _portalLoginState.value = PortalLoginState.Running
+            _portalLoginState.value = try {
+                val token = portalApi.login(username, password)
+                val cfg = portalApi.fetchConfig(token)
+                val server = Server(
+                    name = "VK-TURN ($username)",
+                    client = ClientConfig(
+                        provider = Provider.HUB,
+                        serverAddress = cfg.peer,
+                        hubUrl = cfg.hubUrls.joinToString(","),
+                        hubPin = cfg.hubPin,
+                        hubToken = cfg.hubToken,
+                        threads = cfg.streams.takeIf { it > 0 } ?: ClientConfig.DEFAULT_THREADS,
+                        tcpForward = true,
+                        bond = true
+                    ),
+                    opts = ServerOpts(
+                        obfProfile = cfg.obfProfile.ifBlank { ObfProfile.NONE },
+                        obfKey = cfg.obfKey
+                    )
+                )
+                prefs.addServer(server, activate = true)
+                PortalLoginState.Done(server.name)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                PortalLoginState.Error(e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    fun clearPortalLoginState() {
+        _portalLoginState.value = PortalLoginState.Idle
     }
 
     fun deleteSubscription(id: String) {

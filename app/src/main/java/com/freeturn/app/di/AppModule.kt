@@ -5,6 +5,7 @@ import com.freeturn.app.domain.backup.BackupManager
 import com.freeturn.app.domain.update.AppUpdater
 import com.freeturn.app.domain.share.LinkImportBus
 import com.freeturn.app.domain.subscription.XraySubscriptionFetcher
+import com.freeturn.app.domain.portal.PortalApiClient
 import com.freeturn.app.domain.proxy.LocalProxyManager
 import com.freeturn.app.domain.proxy.ProxyOrchestrator
 import com.freeturn.app.domain.proxy.ProxyServiceLauncher
@@ -27,6 +28,7 @@ val appModule = module {
     single { ProxyOrchestrator(get(), get()) }
     single { LinkImportBus() }
     single { XraySubscriptionFetcher() }
+    single { PortalApiClient() }
 
     viewModelOf(::ProxyViewModel)
     viewModelOf(::SettingsViewModel)
