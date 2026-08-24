@@ -9,8 +9,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Опрашивает TrafficStats по UID раз в 3с и отдаёт строку "↓ rx ↑ tx" в [onSpeed].
- * Цикл живёт пока [isStopped] не вернёт true (или scope не отменят).
+ * Опрашивает TrafficStats по UID раз в [POLL_INTERVAL_MS] и отдаёт строку
+ * "↓ rx ↑ tx" в [onSpeed]. Цикл живёт пока [isStopped] не вернёт true (или
+ * scope не отменят).
  */
 class SpeedMonitor(
     private val scope: CoroutineScope,
@@ -26,13 +27,17 @@ class SpeedMonitor(
             var lastRx = TrafficStats.getUidRxBytes(uid)
             var lastTx = TrafficStats.getUidTxBytes(uid)
             while (!isStopped()) {
-                delay(3000)
+                delay(POLL_INTERVAL_MS)
                 val currentRx = TrafficStats.getUidRxBytes(uid)
                 val currentTx = TrafficStats.getUidTxBytes(uid)
                 if (currentRx != TrafficStats.UNSUPPORTED.toLong() &&
                     lastRx != TrafficStats.UNSUPPORTED.toLong()) {
-                    val rxSpeed = maxOf(0, currentRx - lastRx)
-                    val txSpeed = maxOf(0, currentTx - lastTx)
+                    // Дельта копится за POLL_INTERVAL_MS, не за 1с - без деления
+                    // показометр врёт в (POLL_INTERVAL_MS/1000) раз больше
+                    // настоящей скорости (было: 3с дельта показывалась как
+                    // ".../s" без пересчёта - завышение ровно ×3).
+                    val rxSpeed = (maxOf(0, currentRx - lastRx) * 1000 / POLL_INTERVAL_MS)
+                    val txSpeed = (maxOf(0, currentTx - lastTx) * 1000 / POLL_INTERVAL_MS)
                     onSpeed("↓ ${format(rxSpeed)} ↑ ${format(txSpeed)}")
                     lastRx = currentRx
                     lastTx = currentTx
@@ -45,5 +50,9 @@ class SpeedMonitor(
         bytes < 1024 -> "$bytes B/s"
         bytes < 1024 * 1024 -> "${bytes / 1024} KB/s"
         else -> String.format(Locale.US, "%.1f MB/s", bytes / (1024f * 1024f))
+    }
+
+    companion object {
+        private const val POLL_INTERVAL_MS = 3000L
     }
 }
