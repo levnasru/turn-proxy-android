@@ -36,8 +36,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.freeturn.app.R
 import com.freeturn.app.data.CoreArgs
 import com.freeturn.app.data.server.Server
+import com.freeturn.app.domain.proxy.ProxyServiceState
 import com.freeturn.app.ui.components.SettingsBackButton
 import com.freeturn.app.ui.components.SettingsContentMaxWidth
+import com.freeturn.app.ui.components.SettingsEntryRow
 import com.freeturn.app.ui.components.SettingsGroup
 import com.freeturn.app.ui.components.SettingsGroupItem
 import com.freeturn.app.ui.components.SettingsSwitchRow
@@ -130,6 +132,37 @@ private fun NerdContent(
                 checked = client.logsEnabled,
                 onCheckedChange = onLogsEnabledChange
             )
+        }
+    }
+
+    // Шаг 3 (живой ресайз hot-set'а): ручной тест grow/shrink через stdin
+    // запущенного ядра (см. CoreProcessController.sendCommand,
+    // ProxyServiceState.requestManualCommand). Только пока debugMode
+    // включён - это тестовые кнопки для проверки механизма, не для семьи;
+    // gradientLoop's предложение к ним пока не подключено.
+    if (client.debugMode) {
+        val isRunning by ProxyServiceState.isRunning.collectAsStateWithLifecycle()
+        SettingsGroup {
+            SettingsGroupItem(0, 2) {
+                SettingsEntryRow(
+                    iconRes = R.drawable.add_24px,
+                    title = stringResource(R.string.hotset_grow),
+                    subtitle = stringResource(R.string.hotset_grow_desc),
+                    trailingRes = null,
+                    enabled = isRunning,
+                    onClick = { ProxyServiceState.requestManualCommand("grow") }
+                )
+            }
+            SettingsGroupItem(1, 2) {
+                SettingsEntryRow(
+                    iconRes = R.drawable.terminal_24px,
+                    title = stringResource(R.string.hotset_shrink),
+                    subtitle = stringResource(R.string.hotset_shrink_desc),
+                    trailingRes = null,
+                    enabled = isRunning,
+                    onClick = { ProxyServiceState.requestManualCommand("shrink") }
+                )
+            }
         }
     }
 

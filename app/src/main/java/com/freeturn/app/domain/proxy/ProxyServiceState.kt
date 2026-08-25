@@ -33,6 +33,20 @@ object ProxyServiceState {
     private val _proxyFailed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val proxyFailed: SharedFlow<Unit> = _proxyFailed.asSharedFlow()
 
+    /**
+     * Ручная команда ядру через stdin запущенного процесса ("rotate"/"grow"/
+     * "shrink" - см. cmd/client/main.go's readManualCommands).
+     * CoreProcessController подписывается на этот Flow, пока процесс жив;
+     * [requestManualCommand] - no-op, если ядро сейчас не запущено (некому
+     * подписаться).
+     */
+    private val _manualCommand = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val manualCommand: SharedFlow<String> = _manualCommand.asSharedFlow()
+
+    fun requestManualCommand(cmd: String) {
+        _manualCommand.tryEmit(cmd)
+    }
+
     private val _startupResult = MutableStateFlow<StartupResult?>(null)
     val startupResult: StateFlow<StartupResult?> = _startupResult.asStateFlow()
 

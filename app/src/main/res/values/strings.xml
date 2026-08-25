@@ -318,6 +318,10 @@
 
     <string name="debug_mode">Подробное логирование</string>
     <string name="debug_mode_desc">Детальный вывод ядра</string>
+    <string name="hotset_grow">Увеличить hot-set (+1)</string>
+    <string name="hotset_grow_desc">Ручной тест живого ресайза - добавляет один поток</string>
+    <string name="hotset_shrink">Уменьшить hot-set (-1)</string>
+    <string name="hotset_shrink_desc">Ручной тест живого ресайза - убирает худший по RTT поток</string>
     <string name="magic_switch">Альтернативный TURN-узел</string>
     <string name="magic_switch_desc">Указанный TURN-сервер вместо автоподбора</string>
     <string name="magic_switch_address_label">Адрес TURN-узла</string>

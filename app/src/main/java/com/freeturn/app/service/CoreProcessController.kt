@@ -87,6 +87,30 @@ class CoreProcessController(
     val isRunning: Boolean get() = process.get() != null
     val isUserStopped: Boolean get() = userStopped.get()
 
+    init {
+        // Живёт всю жизнь контроллера (не per-start()), чтобы не плодить
+        // повторные подписки на пересозданиях процесса (network handover и
+        // т.п.) - sendCommand сам no-op'ает, пока process ещё/уже null.
+        scope.launch {
+            ProxyServiceState.manualCommand.collect { cmd -> sendCommand(cmd) }
+        }
+    }
+
+    /**
+     * Пишет одну команду в stdin запущенного ядра ("rotate"/"grow"/"shrink" -
+     * см. cmd/client/main.go's readManualCommands). No-op, если ядро сейчас
+     * не запущено.
+     */
+    private fun sendCommand(cmd: String) {
+        val proc = process.get() ?: return
+        try {
+            proc.outputStream.write("$cmd\n".toByteArray())
+            proc.outputStream.flush()
+        } catch (e: java.io.IOException) {
+            ProxyServiceState.addLog("Команда '$cmd' не отправлена: ${e.message}")
+        }
+    }
+
     fun start() {
         userStopped.set(false)
         restartCount.set(0)
