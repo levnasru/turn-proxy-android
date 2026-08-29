@@ -1011,7 +1011,7 @@ T2=$(curl -sk -X POST https://127.0.0.1:8449/api/v1/login -H "Content-Type: appl
 curl -sk "https://127.0.0.1:8449/api/v1/config?device=android" -H "Authorization: Bearer $T1" -o /dev/null &
 curl -sk "https://127.0.0.1:8449/api/v1/config?device=android" -H "Authorization: Bearer $T2" -o /dev/null &
 wait
-sudo grep -c "ios-portal-android" /etc/vkturn/ios-portal/wgcl.conf
+sudo grep -c "ios-portal-android" /etc/wireguard/wgcl.conf
 '
 ```
 
