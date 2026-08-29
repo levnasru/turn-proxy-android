@@ -331,7 +331,7 @@ func TestRewritePeerBlockMarkerPrefix(t *testing.T) {
 }
 ```
 
-Also add `"strings"` and `"fmt"` to `main_test.go`'s import block (used by this test and Task 4's tests).
+Also add `"strings"` to `main_test.go`'s import block (used by this test's `strings.Contains` calls). Do NOT add `"fmt"` here — nothing in this task's own test uses it yet, and Go rejects unused imports; Task 4 adds `"fmt"` when its own test first needs it.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -470,16 +470,20 @@ func TestNextFreeIPSkipsAndroidOctets(t *testing.T) {
 	if err := os.WriteFile(cfg.WGConfPath, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Octets 6/7, not 2/3: nextFreeIP's search loop starts at 6 (reserved
+	// for hand-added family peers .2-.5, pre-existing/documented, out of
+	// scope here) - octets below 6 can never affect the result either way,
+	// so the test has to live inside the scanned range to mean anything.
 	users := []User{
-		{Username: "ios1", WGIP: "10.13.13.2"},
-		{Username: "android1", AndroidWGIP: "10.13.13.3"},
+		{Username: "ios1", WGIP: "10.13.13.6"},
+		{Username: "android1", AndroidWGIP: "10.13.13.7"},
 	}
 	ip, err := nextFreeIP(cfg, users)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ip != "10.13.13.4" {
-		t.Fatalf("expected 10.13.13.4 (2 and 3 taken), got %s", ip)
+	if ip != "10.13.13.8" {
+		t.Fatalf("expected 10.13.13.8 (6 and 7 taken), got %s", ip)
 	}
 }
 ```
@@ -487,7 +491,7 @@ func TestNextFreeIPSkipsAndroidOctets(t *testing.T) {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd /home/lev/vkturn-ios-portal && go test ./... -run TestNextFreeIPSkipsAndroidOctets -v`
-Expected: FAIL — `nextFreeIP` returns `10.13.13.3` (doesn't know about `AndroidWGIP` yet, only octet 2 is seen as taken).
+Expected: FAIL — `nextFreeIP` returns `10.13.13.7` (doesn't know about `AndroidWGIP` yet, only octet 6 is seen as taken).
 
 - [ ] **Step 3: Add the fields and extend `nextFreeIP`**
 
@@ -596,6 +600,8 @@ func TestEnsureAndroidWGPeerPropagatesApplyError(t *testing.T) {
 	}
 }
 ```
+
+Add `"fmt"` to `main_test.go`'s import block — used by `TestEnsureAndroidWGPeerPropagatesApplyError`'s `fmt.Errorf("boom")` above (this is the first task whose own test needs it; Task 2 deliberately did not add it early, since Go rejects unused imports).
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -1241,7 +1247,11 @@ In `SettingsViewModel.kt`, extend the `ClientConfig(...)` construction inside `l
                 )
 ```
 
-Add the import for `TunnelTransport` if `SettingsViewModel.kt` doesn't already have it (check the existing import block first — `ClientConfig.kt` defines `TunnelTransport` in the same `com.freeturn.app.data.config` package `SettingsViewModel.kt` already imports `ClientConfig`/`Provider`/`ObfProfile` from, so it's likely just `import com.freeturn.app.data.config.TunnelTransport` if not already covered by an existing wildcard/package import).
+`SettingsViewModel.kt` uses explicit per-symbol imports (verified — no wildcard imports in its import block). Add this line alongside the existing `com.freeturn.app.data.config.*` imports (next to `import com.freeturn.app.data.config.Provider`, line 12):
+
+```kotlin
+import com.freeturn.app.data.config.TunnelTransport
+```
 
 - [ ] **Step 3: Build**
 
