@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.6](https://github.com/levnasru/turn-proxy-android/compare/v3.6.5...v3.6.6) (2026-08-30)
+
+
+### Fixes
+
+* portal login no longer forces tcp+bond when a WireGuard config is present — WG carries UDP, tcp+bond turned the local listener into a TCP socket WG packets could never reach, causing zero download traffic despite a live WG handshake
+
 ## [3.6.5](https://github.com/levnasru/turn-proxy-android/compare/v3.5.5...v3.6.5) (2026-08-30)
 
 

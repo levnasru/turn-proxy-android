@@ -251,6 +251,7 @@ class SettingsViewModel(
                 val token = portalApi.login(username, password)
                 val cfg = portalApi.fetchConfig(token)
                 val wgConf = cfg.wgConfig.trim()
+                val hasWg = wgConf.isNotEmpty()
                 val server = Server(
                     name = "VK-TURN ($username)",
                     client = ClientConfig(
@@ -260,9 +261,13 @@ class SettingsViewModel(
                         hubPin = cfg.hubPin,
                         hubToken = cfg.hubToken,
                         threads = cfg.streams.takeIf { it > 0 } ?: ClientConfig.DEFAULT_THREADS,
-                        tcpForward = true,
-                        bond = true,
-                        tunnelTransport = if (wgConf.isNotEmpty()) TunnelTransport.WIREGUARD
+                        // WireGuard рвётся к -listen UDP-релеем (-mode udp, дефолт core):
+                        // tcp+bond превращает -listen в TCP-сокет, и WG-пакеты идут в
+                        // никуда (down=0 bit/s при живом хендшейке). tcp+bond годится
+                        // только без WG-слоя сверху.
+                        tcpForward = !hasWg,
+                        bond = !hasWg,
+                        tunnelTransport = if (hasWg) TunnelTransport.WIREGUARD
                         else TunnelTransport.NONE,
                         wireGuardConfig = wgConf
                     ),
