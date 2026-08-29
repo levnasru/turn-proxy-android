@@ -35,3 +35,6 @@ keystore.properties
 # Claude Code
 .claude/
 CLAUDE.md
+
+# git worktrees (superpowers:using-git-worktrees)
+.worktrees/
