@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.5.5](https://github.com/levnasru/turn-proxy-android/compare/v3.5.4...v3.5.5) (2026-08-30)
+
+
+### Features
+
+* manual hot-set grow/shrink trigger (debug Nerd screen) ([7306214](https://github.com/levnasru/turn-proxy-android/commit/7306214))
+
+
+### Fixes
+
+* rebuild against free-turn-proxy v2.4.0 (gradient reset-window settle-period calibration, P14 TURN age rotation)
+
 ## [3.6.3](https://github.com/levnasru/turn-proxy-android/compare/v3.6.2...v3.6.3) (2026-08-24)
 
 
