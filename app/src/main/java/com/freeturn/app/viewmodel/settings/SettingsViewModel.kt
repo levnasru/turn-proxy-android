@@ -10,6 +10,7 @@ import com.freeturn.app.data.backup.BackupCrypto
 import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.data.config.ObfProfile
 import com.freeturn.app.data.config.Provider
+import com.freeturn.app.data.config.TunnelTransport
 import com.freeturn.app.data.server.Server
 import com.freeturn.app.data.server.ServerOpts
 import com.freeturn.app.data.server.ServersSnapshot
@@ -249,6 +250,7 @@ class SettingsViewModel(
             _portalLoginState.value = try {
                 val token = portalApi.login(username, password)
                 val cfg = portalApi.fetchConfig(token)
+                val wgConf = cfg.wgConfig.trim()
                 val server = Server(
                     name = "VK-TURN ($username)",
                     client = ClientConfig(
@@ -259,7 +261,10 @@ class SettingsViewModel(
                         hubToken = cfg.hubToken,
                         threads = cfg.streams.takeIf { it > 0 } ?: ClientConfig.DEFAULT_THREADS,
                         tcpForward = true,
-                        bond = true
+                        bond = true,
+                        tunnelTransport = if (wgConf.isNotEmpty()) TunnelTransport.WIREGUARD
+                        else TunnelTransport.NONE,
+                        wireGuardConfig = wgConf
                     ),
                     opts = ServerOpts(
                         obfProfile = cfg.obfProfile.ifBlank { ObfProfile.NONE },

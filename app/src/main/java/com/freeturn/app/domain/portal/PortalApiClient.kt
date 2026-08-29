@@ -17,7 +17,8 @@ data class PortalConfig(
     val peer: String,
     val obfProfile: String,
     val obfKey: String,
-    val streams: Int
+    val streams: Int,
+    val wgConfig: String
 )
 
 /**
@@ -67,7 +68,8 @@ class PortalApiClient(private val baseUrl: String = DEFAULT_BASE_URL) {
                 peer = json.optString("peer"),
                 obfProfile = json.optString("obfProfile"),
                 obfKey = json.optString("obfKey"),
-                streams = json.optInt("streams", DEFAULT_STREAMS)
+                streams = json.optInt("streams", DEFAULT_STREAMS),
+                wgConfig = json.optString("wgConfig")
             )
         } finally {
             conn.disconnect()

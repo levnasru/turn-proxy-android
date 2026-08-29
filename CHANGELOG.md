@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.6.5](https://github.com/levnasru/turn-proxy-android/compare/v3.5.5...v3.6.5) (2026-08-30)
+
+
+### Fixes
+
+* portal login now wires wgConfig from /api/v1/config into ClientConfig (tunnelTransport=wireguard) — was silently dropped, WG never came up after account login
+
 ## [3.5.5](https://github.com/levnasru/turn-proxy-android/compare/v3.5.4...v3.5.5) (2026-08-30)
 
 
