@@ -135,15 +135,17 @@ private fun NerdContent(
         }
     }
 
-    // Шаг 3 (живой ресайз hot-set'а): ручной тест grow/shrink через stdin
-    // запущенного ядра (см. CoreProcessController.sendCommand,
-    // ProxyServiceState.requestManualCommand). Только пока debugMode
-    // включён - это тестовые кнопки для проверки механизма, не для семьи;
-    // gradientLoop's предложение к ним пока не подключено.
+    // Шаг 3 (живой ресайз hot-set'а) и Шаг 4 (автоскейлер): ручной тест
+    // grow/shrink/auto через stdin запущенного ядра (см.
+    // CoreProcessController.sendCommand, ProxyServiceState.requestManualCommand).
+    // Только пока debugMode включён - это тестовые кнопки для проверки
+    // механизма, не для семьи. "auto" - тумблер автоскейлера, который включён
+    // при старте ядра, то есть первое нажатие его ВЫКЛЮЧАЕТ (см.
+    // docs/hotset-autoscaler.md в Go-репозитории).
     if (client.debugMode) {
         val isRunning by ProxyServiceState.isRunning.collectAsStateWithLifecycle()
         SettingsGroup {
-            SettingsGroupItem(0, 2) {
+            SettingsGroupItem(0, 3) {
                 SettingsEntryRow(
                     iconRes = R.drawable.add_24px,
                     title = stringResource(R.string.hotset_grow),
@@ -153,7 +155,7 @@ private fun NerdContent(
                     onClick = { ProxyServiceState.requestManualCommand("grow") }
                 )
             }
-            SettingsGroupItem(1, 2) {
+            SettingsGroupItem(1, 3) {
                 SettingsEntryRow(
                     iconRes = R.drawable.terminal_24px,
                     title = stringResource(R.string.hotset_shrink),
@@ -161,6 +163,16 @@ private fun NerdContent(
                     trailingRes = null,
                     enabled = isRunning,
                     onClick = { ProxyServiceState.requestManualCommand("shrink") }
+                )
+            }
+            SettingsGroupItem(2, 3) {
+                SettingsEntryRow(
+                    iconRes = R.drawable.terminal_24px,
+                    title = stringResource(R.string.hotset_auto),
+                    subtitle = stringResource(R.string.hotset_auto_desc),
+                    trailingRes = null,
+                    enabled = isRunning,
+                    onClick = { ProxyServiceState.requestManualCommand("auto") }
                 )
             }
         }

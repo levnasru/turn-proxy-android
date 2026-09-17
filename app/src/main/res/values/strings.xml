@@ -322,6 +322,8 @@
     <string name="hotset_grow_desc">Ручной тест живого ресайза - добавляет один поток</string>
     <string name="hotset_shrink">Уменьшить hot-set (-1)</string>
     <string name="hotset_shrink_desc">Ручной тест живого ресайза - убирает худший по RTT поток</string>
+    <string name="hotset_auto">Автоскейлер hot-set</string>
+    <string name="hotset_auto_desc">Тумблер: включён при старте, нажатие ВЫКЛЮЧАЕТ (решения останутся в логе)</string>
     <string name="magic_switch">Альтернативный TURN-узел</string>
     <string name="magic_switch_desc">Указанный TURN-сервер вместо автоподбора</string>
     <string name="magic_switch_address_label">Адрес TURN-узла</string>

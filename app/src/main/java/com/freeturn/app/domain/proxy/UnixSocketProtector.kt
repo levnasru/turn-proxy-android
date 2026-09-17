@@ -6,55 +6,122 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.File
 
 class UnixSocketProtector(private val context: Context) {
     private var serverSocket: LocalServerSocket? = null
+    private var acceptJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    fun start(socketPath: String) {
-        scope.launch {
-            try {
-                val sockFile = File(socketPath)
-                if (sockFile.exists()) {
-                    sockFile.delete()
+    // socketName - имя в АБСТРАКТНОМ namespace (без ведущего "@"; его добавляет
+    // только строка флага -protect-path, Go так отличает абстрактный сокет от
+    // файлового). Имя обязано быть уникальным на устройство: абстрактные имена
+    // живут в network namespace, то есть общие для всех приложений, и раньше
+    // здесь стоял константный "freeturn_protect" - релиз и debug-сборка
+    // (applicationId + ".debug") бились за одно имя. Кто забиндил первым, тот
+    // владел, а ядро проигравшей сборки коннектилось к сокету ЧУЖОГО uid и
+    // получало "dial unix @freeturn_protect: connect: permission denied" на
+    // каждый dial TURN. Имя приходит из packageName - сборки больше не пересекаются.
+    private var currentSocketName: String? = null
+
+    @Synchronized
+    fun start(socketName: String) {
+        stop()
+        currentSocketName = socketName
+        try {
+            var server: LocalServerSocket? = null
+            var lastErr: Exception? = null
+            for (attempt in 1..5) {
+                try {
+                    server = LocalServerSocket(socketName)
+                    break
+                } catch (e: Exception) {
+                    lastErr = e
+                    try {
+                        val s = LocalSocket()
+                        s.connect(LocalSocketAddress(socketName))
+                        s.close()
+                    } catch (_: Exception) {}
+                    Thread.sleep(80)
                 }
+            }
+            if (server == null) {
+                throw lastErr ?: java.io.IOException("Failed to bind $socketName")
+            }
+            serverSocket = server
 
-                // Android LocalServerSocket(String) creates an abstract socket.
-                // Go uses "@abstractName" for abstract sockets.
-                // We will create a normal Unix domain socket using reflection or bind directly?
-                // Wait! To use filesystem path with LocalServerSocket, we must use LocalServerSocket(FileDescriptor).
-                // Or we can just use an abstract socket! If we name it "freeturn_protect", Go can connect to "@freeturn_protect".
-                
-                // Let's use the abstract namespace:
-                serverSocket = LocalServerSocket("freeturn_protect")
-                Log.i("UnixSocketProtector", "Listening on abstract socket freeturn_protect")
-
-                while (isActive) {
-                    val socket = serverSocket?.accept() ?: break
-                    launch(Dispatchers.IO) {
-                        handleSocket(socket)
-                    }
+            // Устанавливаем FD_CLOEXEC на дескриптор сокета, чтобы дочерний процесс
+            // libfreeturn.so при fork'е ProcessBuilder не наследовал слушающий сокет
+            // и не удерживал адрес занятым при рестартах.
+            try {
+                val fd = server.fileDescriptor
+                if (fd != null && fd.valid()) {
+                    val flags = Os.fcntlInt(fd, OsConstants.F_GETFD, 0)
+                    Os.fcntlInt(fd, OsConstants.F_SETFD, flags or OsConstants.FD_CLOEXEC)
                 }
             } catch (e: Exception) {
-                Log.e("UnixSocketProtector", "Server error", e)
+                Log.w("UnixSocketProtector", "Could not set FD_CLOEXEC: ${e.message}")
             }
+
+            Log.i("UnixSocketProtector", "Listening on abstract socket $socketName")
+
+            acceptJob = scope.launch {
+                try {
+                    while (isActive) {
+                        val socket = server.accept() ?: break
+                        launch(Dispatchers.IO) {
+                            handleSocket(socket)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // isActive отсекает штатный stop() (там accept падает после close).
+                    if (isActive) {
+                        Log.e("UnixSocketProtector", "Server error", e)
+                        ProxyServiceState.addLog(
+                            "Сокет защиты $socketName ошибка accept (${e.message})"
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("UnixSocketProtector", "Server bind error", e)
+            ProxyServiceState.addLog(
+                "Сокет защиты $socketName не поднялся (${e.message}) - соединения ядра пойдут в тоннель и упадут"
+            )
         }
     }
 
+    @Synchronized
     fun stop() {
-        scope.cancel()
-        try {
-            serverSocket?.close()
-        } catch (e: Exception) {
-            // Ignore
+        acceptJob?.cancel()
+        acceptJob = null
+        val server = serverSocket
+        serverSocket = null
+        if (server != null) {
+            try {
+                val fd = server.fileDescriptor
+                if (fd != null && fd.valid()) {
+                    Os.shutdown(fd, OsConstants.SHUT_RDWR)
+                }
+            } catch (_: Exception) {}
+            try {
+                currentSocketName?.let { name ->
+                    val s = LocalSocket()
+                    s.connect(LocalSocketAddress(name))
+                    s.close()
+                }
+            } catch (_: Exception) {}
+            try {
+                server.close()
+            } catch (_: Exception) {}
         }
     }
 

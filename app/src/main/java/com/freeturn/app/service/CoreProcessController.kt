@@ -336,17 +336,19 @@ class CoreProcessController(
                                 ProxyServiceState.markConnectedIfAbsent(SystemClock.elapsedRealtime())
                                 notifier.setStatus(context.getString(R.string.proxy_active), active = true)
                                 if (cfg.wireGuardActive && wgWanted.get()) {
-                                    ProxyServiceState.addLog(
-                                        "WireGuard: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
-                                    )
-                                    delay(WIREGUARD_START_DELAY_MS)
-                                    if (userStopped.get() || process.get() !== proc) {
+                                    scope.launch {
                                         ProxyServiceState.addLog(
-                                            "WireGuard: старт отменён, прокси останавливается"
+                                            "WireGuard: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
                                         )
-                                        break
+                                        delay(WIREGUARD_START_DELAY_MS)
+                                        if (userStopped.get() || process.get() !== proc) {
+                                            ProxyServiceState.addLog(
+                                                "WireGuard: старт отменён, прокси останавливается"
+                                            )
+                                            return@launch
+                                        }
+                                        startWireGuard(cfg)
                                     }
-                                    startWireGuard(cfg)
                                 }
                                 startupEmitted = true
                             }

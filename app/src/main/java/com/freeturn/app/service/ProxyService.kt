@@ -34,6 +34,14 @@ class ProxyService : Service() {
 
     private val prefs: AppPreferences by inject()
 
+    // Абстрактные имена unix-сокетов лежат в network namespace - одном на все
+    // приложения устройства. Константное "freeturn_protect" делало релиз и
+    // debug-сборку (тот же код, applicationId + ".debug") конкурентами за одно
+    // имя: ядро проигравшей сборки коннектилось к сокету чужого uid и падало на
+    // "connect: permission denied" на каждом dial TURN. Привязка к packageName
+    // разводит сборки; UnixSocketProtector биндит это же имя.
+    private val protectSocketName: String get() = "freeturn_protect.$packageName"
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -51,7 +59,7 @@ class ProxyService : Service() {
             notifier = notifier,
             carrierDns = { networkMonitor.activeDnsServers() },
             onStopRequested = { stopSelf() },
-            protectPath = "@freeturn_protect",
+            protectPath = "@$protectSocketName",
         )
         speedMonitor = SpeedMonitor(
             scope = serviceScope,
@@ -109,7 +117,7 @@ class ProxyService : Service() {
         acquireWakeLock()
         networkMonitor.register()
         ProxyServiceState.addLog("Запуск прокси")
-        socketProtector.start("@freeturn_protect")
+        socketProtector.start(protectSocketName)
         speedMonitor.start()
         controller.start()
 

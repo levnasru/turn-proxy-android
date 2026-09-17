@@ -41,6 +41,7 @@ class WireGuardTunnelManager(context: Context) {
         val preparedConfig = rawConfig
             .withLocalEndpoint(endpoint)
             .withMtu(ClientConfig.WG_MTU)
+            .withPersistentKeepalive(25)
             .withLanBypass()
             .withSplitTunnel(
                 appPackage = appContext.packageName,
@@ -138,6 +139,33 @@ private fun String.withMtu(mtu: Int): String {
     }
     if (interfaceIndex < 0) return lines.joinToString("\n")
     lines.add(interfaceIndex + 1, "MTU = $mtu")
+    return lines.joinToString("\n")
+}
+
+private fun String.withPersistentKeepalive(seconds: Int = 25): String {
+    var inPeer = false
+    var replaced = false
+    val lines = lineSequence().map { line ->
+        val section = line.trim()
+        if (section.startsWith("[") && section.endsWith("]")) {
+            inPeer = section.equals("[Peer]", ignoreCase = true)
+        }
+        if (inPeer && !replaced && section.startsWith("PersistentKeepalive", ignoreCase = true) &&
+            section.contains("=")) {
+            replaced = true
+            line
+        } else {
+            line
+        }
+    }.toMutableList()
+    if (!replaced) {
+        val peerIndex = lines.indexOfFirst {
+            it.trim().equals("[Peer]", ignoreCase = true)
+        }
+        if (peerIndex >= 0) {
+            lines.add(peerIndex + 1, "PersistentKeepalive = $seconds")
+        }
+    }
     return lines.joinToString("\n")
 }
 

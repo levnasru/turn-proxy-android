@@ -1,5 +1,6 @@
 package com.freeturn.app.domain.proxy
 
+import android.util.Log
 import com.freeturn.app.domain.CaptchaSession
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.StartupResult
@@ -113,6 +114,7 @@ object ProxyServiceState {
     }
 
     fun addLog(msg: String) {
+        Log.d("ProxyCore", msg)
         if (!_logsEnabled.value) return
         val entry = LogEntry(logSeq.getAndIncrement(), msg, classifyLogLine(msg))
         _logs.update { current ->

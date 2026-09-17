@@ -17,6 +17,7 @@ import android.os.SystemClock
 import androidx.core.app.ServiceCompat
 import com.freeturn.app.R
 import com.freeturn.app.data.AppPreferences
+import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.StartupResult
 import com.freeturn.app.domain.proxy.PRIVATE_IPV4_CIDRS
@@ -160,7 +161,7 @@ class RealityVpnService : VpnService() {
 
         val builder = Builder()
             .setSession("VK-TURN Reality")
-            .setMtu(1420)
+            .setMtu(ClientConfig.WG_MTU)
             .addAddress("172.19.0.1", 30)
             .addDnsServer("1.1.1.1")
         // RFC1918/link-local/loopback (принтер/NAS/роутер/KDE Connect/Immich по
@@ -270,7 +271,7 @@ class RealityVpnService : VpnService() {
                     put(
                         "settings",
                         JSONObject().apply {
-                            put("mtu", 1420)
+                            put("mtu", ClientConfig.WG_MTU)
                             // Пустое name -> xray-core сам генерит имя через net.Interfaces()
                             // (infra/conf/tun.go: GetAvailableTunName), а это netlink-запрос
                             // системных интерфейсов - под Android-песочницей падает permission
