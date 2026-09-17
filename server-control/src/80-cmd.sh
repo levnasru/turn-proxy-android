@@ -28,7 +28,7 @@ parse_args() {
                 [[ "$ARG_MODE" =~ ^(udp|tcp)$ ]] || fail bad_arg "bad --mode (need udp|tcp)" ;;
             --obf-profile=*)
                 ARG_OBF_PROFILE="${1#*=}"
-                [[ "$ARG_OBF_PROFILE" =~ ^(none|rtpopus|rtpopus2|rtpopus3)$ ]] || fail bad_arg "bad --obf-profile" ;;
+                [[ "$ARG_OBF_PROFILE" =~ ^(none|rtpopus|rtpopus2|rtpopus3|rtpvideo)$ ]] || fail bad_arg "bad --obf-profile" ;;
             --obf-key=*)
                 ARG_OBF_KEY="${1#*=}"
                 [[ "$ARG_OBF_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || fail bad_arg "bad --obf-key (need 64 hex)" ;;
