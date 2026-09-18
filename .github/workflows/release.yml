@@ -83,7 +83,6 @@ jobs:
     name: Telegram announce
     runs-on: ubuntu-latest
     needs: build-and-publish
-    if: always() && needs.build-and-publish.result == 'success' && (secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '')
     steps:
       - name: Send release message
         env:
@@ -92,6 +91,11 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
         run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "Telegram credentials not configured, skipping"
+            exit 0
+          fi
+
           BODY=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body -q .body | head -c 3000)
           URL=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url -q .url)
           TAG="$GITHUB_REF_NAME"
