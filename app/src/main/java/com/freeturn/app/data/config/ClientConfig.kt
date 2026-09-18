@@ -59,9 +59,10 @@ data class ClientConfig(
         const val DEFAULT_LOCAL_PORT = "127.0.0.1:9000"
         const val DEFAULT_THREADS = 12
         const val DEFAULT_STREAMS_PER_CRED = 12
-        // Не настройка, а константа транспорта: WG идёт поверх TURN (STUN-обёртка +
-        // UDP + IP), дефолтные 1420 фрагментируются. 1280 - минимум IPv6, живёт везде.
-        // Серверная сторона держит то же значение (control.sh, WG_MTU).
-        const val WG_MTU = 1280
+        // Не настройка, а константа транспорта: WG идёт поверх TURN+обфускации+reseq.
+        // Суммарный оверхед на IPv6 (40 IP + 8 UDP + 4 STUN + 62 rtpvideo + 8 reseq + 32 WG) = 154 байта.
+        // Чтобы внешний UDP-пакет гарантированно не превышал 1280 (минимум IPv6 / сотовый MTU 1300),
+        // внутренний WG MTU = 1120 (1120 + 154 = 1274 <= 1280).
+        const val WG_MTU = 1120
     }
 }

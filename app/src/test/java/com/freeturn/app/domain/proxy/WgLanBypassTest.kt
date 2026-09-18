@@ -76,4 +76,11 @@ class WgLanBypassTest {
     fun `pure private range collapses to empty`() {
         assertEquals("", excludeLanFromAllowedIps("192.168.0.0/16"))
     }
+
+    @Test
+    fun `tunnel subnet is preserved when keepSubnet provided`() {
+        val result = excludeLanFromAllowedIps("0.0.0.0/0", keepSubnet = "10.13.13.0/24").split(",").map { it.trim() }
+        assertCovered(result, "10.13.13.1", "10.13.13.14", "8.8.8.8")
+        assertNotCovered(result, "10.0.0.1", "10.13.12.1", "10.13.14.1", "192.168.1.1")
+    }
 }

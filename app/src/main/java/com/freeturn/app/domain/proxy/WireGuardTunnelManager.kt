@@ -186,7 +186,27 @@ internal val PRIVATE_IPV4_CIDRS = listOf(
     "255.255.255.255/32", "224.0.0.0/4"
 )
 
+private fun String.extractTunnelSubnet(): String? {
+    var inInterface = false
+    for (line in lineSequence()) {
+        val s = line.trim()
+        if (s.startsWith("[") && s.endsWith("]")) {
+            inInterface = s.equals("[Interface]", ignoreCase = true)
+        }
+        if (inInterface && s.startsWith("Address", ignoreCase = true) && s.contains("=")) {
+            val addr = s.substringAfter("=").trim().split(",").firstOrNull()?.trim() ?: continue
+            val ip = addr.substringBefore("/")
+            val octets = ip.split(".")
+            if (octets.size == 4) {
+                return "${octets[0]}.${octets[1]}.${octets[2]}.0/24"
+            }
+        }
+    }
+    return null
+}
+
 private fun String.withLanBypass(): String {
+    val tunnelSubnet = extractTunnelSubnet()
     var inPeer = false
     val lines = lineSequence().map { line ->
         val section = line.trim()
@@ -194,7 +214,7 @@ private fun String.withLanBypass(): String {
             inPeer = section.equals("[Peer]", ignoreCase = true)
         }
         if (inPeer && section.startsWith("AllowedIPs", ignoreCase = true) && section.contains("=")) {
-            "AllowedIPs = ${excludeLanFromAllowedIps(section.substringAfter("=").trim())}"
+            "AllowedIPs = ${excludeLanFromAllowedIps(section.substringAfter("=").trim(), tunnelSubnet)}"
         } else {
             line
         }
@@ -202,14 +222,20 @@ private fun String.withLanBypass(): String {
     return lines.joinToString("\n")
 }
 
-internal fun excludeLanFromAllowedIps(value: String): String {
+internal fun excludeLanFromAllowedIps(value: String, keepSubnet: String? = null): String {
     val entries = value.split(",").map { it.trim() }.filter { it.isNotBlank() }
     val ipv6 = entries.filter { it.contains(":") }
     val ipv4Ranges = entries.filterNot { it.contains(":") }.mapNotNull(::cidrToRange)
     if (ipv4Ranges.isEmpty()) return value
 
+    val keepRange = keepSubnet?.let(::cidrToRange)
     val privateRanges = PRIVATE_IPV4_CIDRS.mapNotNull(::cidrToRange)
-    val remaining = subtractRanges(mergeRanges(ipv4Ranges), mergeRanges(privateRanges))
+    val effectivePrivateRanges = if (keepRange != null) {
+        subtractRanges(mergeRanges(privateRanges), listOf(keepRange))
+    } else {
+        mergeRanges(privateRanges)
+    }
+    val remaining = subtractRanges(mergeRanges(ipv4Ranges), effectivePrivateRanges)
     val ipv4Cidrs = remaining.flatMap { rangeToCidrs(it.first, it.last) }
 
     return (ipv4Cidrs + ipv6).joinToString(", ")
