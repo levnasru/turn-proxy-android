@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.7.0](https://github.com/levnasru/turn-proxy-android/compare/v3.6.6...v3.7.0) (2026-09-19)
+
+
+### Features
+
+* cellular LTE throughput optimization: 25ms resequencer dwell timeout, STUN ranker with homogeneous latency clustering, DTLS MTU 1050
+* WireGuard LAN bypass preserves tunnel internal subnet in AllowedIPs
+* Telegram release notifications directly to updates topic
+
+
 ## [3.6.6](https://github.com/levnasru/turn-proxy-android/compare/v3.6.5...v3.6.6) (2026-08-30)
 
 
