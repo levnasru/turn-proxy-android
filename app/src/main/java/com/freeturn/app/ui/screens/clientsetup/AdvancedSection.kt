@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.freeturn.app.R
+import com.freeturn.app.data.config.ObfProfile
 import com.freeturn.app.ui.components.SectionLabel
 import com.freeturn.app.ui.components.SettingsCard
 import com.freeturn.app.ui.components.SettingsControlLabel
@@ -28,6 +29,8 @@ import com.freeturn.app.ui.util.redact
 internal fun AdvancedSection(
     useUdp: Boolean,
     onUseUdp: (Boolean) -> Unit,
+    obfProfile: String,
+    onObfProfile: (String) -> Unit,
     manualCaptcha: Boolean,
     onManualCaptcha: (Boolean) -> Unit,
     showBond: Boolean,
@@ -40,6 +43,33 @@ internal fun AdvancedSection(
     privacyMode: Boolean
 ) {
     SectionLabel(stringResource(R.string.client_section_advanced))
+
+    // Профиль обфускации трафика
+    SettingsCard {
+        SettingsFieldSlot {
+            SettingsControlLabel(
+                title = stringResource(R.string.obf_profile_title),
+                desc = "Профиль обфускации WebRTC (rtpvideo — максимальная скорость)"
+            )
+            val profiles = listOf(
+                ObfProfile.RTPVIDEO to "rtpvideo",
+                ObfProfile.RTPOPUS3 to "rtpopus3",
+                ObfProfile.RTPOPUS2 to "rtpopus2",
+                ObfProfile.NONE to "выкл"
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                profiles.forEachIndexed { index, (prof, label) ->
+                    SegmentedButton(
+                        selected = obfProfile == prof,
+                        onClick = { onObfProfile(prof) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = profiles.size)
+                    ) {
+                        Text(label, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
     // TURN-транспорт (-transport tcp|udp) ортогонален режиму туннеля.
     SettingsCard {
         SettingsFieldSlot {

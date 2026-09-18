@@ -39,7 +39,7 @@ CoreArgs {
         if (cfg.tcpForward && cfg.bond) add("-bond")
         if (cfg.useUdp) { add("-transport"); add("udp") }
         if (!cfg.tcpForward) {
-            add("-batch"); add("16")
+            add("-batch"); add("8")
         }
         if (srv.obfEnabled && ObfProfile.isValidKey(srv.obfKey)) {
             add("-obf-profile"); add(srv.obfProfile)

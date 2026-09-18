@@ -325,6 +325,12 @@ class SettingsViewModel(
         }
     }
 
+    fun updateServerOpts(id: String, transform: (ServerOpts) -> ServerOpts) {
+        viewModelScope.launch {
+            prefs.updateServer(id) { it.copy(opts = transform(it.opts)) }
+        }
+    }
+
     fun setBond(enabled: Boolean) {
         viewModelScope.launch {
             val changed = prefs.updateActiveServer {

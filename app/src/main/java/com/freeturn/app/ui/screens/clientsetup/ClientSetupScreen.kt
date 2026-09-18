@@ -266,6 +266,14 @@ fun ClientSetupScreen(
                             HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
                             clientEdit { it.copy(useUdp = v) }
                         },
+                        obfProfile = server?.opts?.obfProfile ?: com.freeturn.app.data.config.ObfProfile.NONE,
+                        onObfProfile = { p ->
+                            HapticUtil.perform(context, HapticUtil.Pattern.TOGGLE_ON)
+                            val targetId = serverId ?: snapshot.activeId
+                            if (targetId != null) {
+                                settingsViewModel.updateServerOpts(targetId) { it.copy(obfProfile = p) }
+                            }
+                        },
                         manualCaptcha = saved.manualCaptcha,
                         onManualCaptcha = { v -> clientEdit { it.copy(manualCaptcha = v) } },
                         showBond = effectiveTcpForward,
