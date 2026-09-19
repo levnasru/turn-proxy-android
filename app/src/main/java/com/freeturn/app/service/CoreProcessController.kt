@@ -317,8 +317,14 @@ class CoreProcessController(
         var startupFailed = false
         var captchaSessionCounter = 0L
 
+        val rawN = if (cfg.isRawMode) {
+            val parts = cfg.rawCommand.trim().split("\\s+".toRegex())
+            val idx = parts.indexOf("-n")
+            if (idx >= 0 && idx + 1 < parts.size) parts[idx + 1].toIntOrNull() else null
+        } else null
+
         val tracker = CoreConnectionTracker(
-            udpTotal = if (cfg.isRawMode) 0 else if (cfg.threads > 0) cfg.threads else 1,
+            udpTotal = if (cfg.isRawMode) (rawN ?: 0) else CoreArgs.effectiveTotalStreams(cfg),
             tcpMode = cfg.tcpForward || cfg.tunnelTransport == TunnelTransport.VK_XRAY
         )
 

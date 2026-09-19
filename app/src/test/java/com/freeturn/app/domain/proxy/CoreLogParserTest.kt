@@ -44,12 +44,24 @@ class CoreLogParserTest {
     @Test
     fun `stream established and closed`() {
         assertEquals(
-            listOf<CoreLogEvent>(CoreLogEvent.StreamEstablished),
+            listOf<CoreLogEvent>(CoreLogEvent.StreamEstablished(1)),
             CoreLogParser.parse("[STREAM 1] Established DTLS connection")
         )
         assertEquals(
-            listOf<CoreLogEvent>(CoreLogEvent.StreamClosed),
+            listOf<CoreLogEvent>(CoreLogEvent.StreamClosed(1)),
             CoreLogParser.parse("[STREAM 1] Closed DTLS connection")
+        )
+    }
+
+    @Test
+    fun `multi-provider total streams from log`() {
+        assertEquals(
+            listOf<CoreLogEvent>(CoreLogEvent.TotalStreams(80)),
+            CoreLogParser.parse("2026/09/19 20:53:00 [INFO] multi-provider: 4 hub accounts, 80 total streams")
+        )
+        assertEquals(
+            listOf<CoreLogEvent>(CoreLogEvent.TotalStreams(40)),
+            CoreLogParser.parse("multi-provider: 2 VK links, 40 total streams")
         )
     }
 
@@ -127,32 +139,54 @@ class CoreConnectionTrackerTest {
         assertEquals(0, t.active)
         assertEquals(2, t.total)
 
-        assertTrue(t.apply(CoreLogEvent.StreamEstablished))
-        assertTrue(t.apply(CoreLogEvent.StreamEstablished))
+        assertTrue(t.apply(CoreLogEvent.StreamEstablished(1)))
+        assertTrue(t.apply(CoreLogEvent.StreamEstablished(2)))
         assertEquals(2, t.active)
         assertTrue(t.hasConnection)
 
-        assertTrue(t.apply(CoreLogEvent.StreamClosed))
+        assertTrue(t.apply(CoreLogEvent.StreamClosed(1)))
         assertEquals(1, t.active)
     }
 
     @Test
     fun `udp active never goes negative`() {
         val t = CoreConnectionTracker(udpTotal = 1, tcpMode = false)
-        t.apply(CoreLogEvent.StreamClosed)
+        t.apply(CoreLogEvent.StreamClosed(1))
         assertEquals(0, t.active)
     }
 
     @Test
-    fun `duplicate stream id counts as increments`() {
-        // Особенность ядра: id=1 дублируется при -n N, пара Established/Closed
-        // на каждый инкремент, счётчик сходится в ноль.
+    fun `reconnecting stream does not inflate active count and clamps to total`() {
         val t = CoreConnectionTracker(udpTotal = 2, tcpMode = false)
-        t.apply(CoreLogEvent.StreamEstablished)
-        t.apply(CoreLogEvent.StreamEstablished)
-        t.apply(CoreLogEvent.StreamClosed)
-        t.apply(CoreLogEvent.StreamClosed)
+        assertTrue(t.apply(CoreLogEvent.StreamEstablished(1)))
+        assertTrue(t.apply(CoreLogEvent.StreamEstablished(1))) // Duplicate/reconnect
+        assertEquals(1, t.active)
+
+        assertTrue(t.apply(CoreLogEvent.StreamEstablished(2)))
+        assertEquals(2, t.active)
+
+        // Stream 3 connects beyond limit - clamped to total 2
+        assertTrue(t.apply(CoreLogEvent.StreamEstablished(3)))
+        assertEquals(2, t.active)
+
+        assertTrue(t.apply(CoreLogEvent.StreamClosed(1)))
+        // 2 and 3 remain in set -> minOf(2, 2) = 2
+        assertEquals(2, t.active)
+
+        assertTrue(t.apply(CoreLogEvent.StreamClosed(2)))
+        assertEquals(1, t.active)
+
+        assertTrue(t.apply(CoreLogEvent.StreamClosed(3)))
         assertEquals(0, t.active)
+    }
+
+    @Test
+    fun `total streams event updates udp total`() {
+        val t = CoreConnectionTracker(udpTotal = 10, tcpMode = false)
+        assertEquals(10, t.total)
+
+        assertTrue(t.apply(CoreLogEvent.TotalStreams(80)))
+        assertEquals(80, t.total)
     }
 
     @Test
@@ -173,7 +207,7 @@ class CoreConnectionTrackerTest {
     fun `stream event switches mode to udp`() {
         // tcpForward в конфиге, но ядро реально пошло по udp-пути.
         val t = CoreConnectionTracker(udpTotal = 3, tcpMode = true)
-        t.apply(CoreLogEvent.StreamEstablished)
+        t.apply(CoreLogEvent.StreamEstablished(1))
         assertEquals(1, t.active)
         assertEquals(3, t.total)
         assertTrue(t.hasConnection)
@@ -191,7 +225,7 @@ class CoreConnectionTrackerTest {
     @Test
     fun `raw mode total is zero`() {
         val t = CoreConnectionTracker(udpTotal = 0, tcpMode = false)
-        t.apply(CoreLogEvent.StreamEstablished)
+        t.apply(CoreLogEvent.StreamEstablished(1))
         assertEquals(1, t.active)
         assertEquals(0, t.total)
     }

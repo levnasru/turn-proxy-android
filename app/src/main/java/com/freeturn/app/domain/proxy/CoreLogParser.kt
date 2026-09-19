@@ -3,8 +3,9 @@ package com.freeturn.app.domain.proxy
 sealed interface CoreLogEvent {
     data class CaptchaUrl(val url: String) : CoreLogEvent
     data object CaptchaResolved : CoreLogEvent
-    data object StreamEstablished : CoreLogEvent
-    data object StreamClosed : CoreLogEvent
+    data class StreamEstablished(val streamId: Int = 1) : CoreLogEvent
+    data class StreamClosed(val streamId: Int = 1) : CoreLogEvent
+    data class TotalStreams(val total: Int) : CoreLogEvent
     data class TcpTotal(val total: Int) : CoreLogEvent
     data class TcpActive(val active: Int) : CoreLogEvent
     data class FatalStartup(val line: String) : CoreLogEvent
@@ -21,6 +22,8 @@ object CoreLogParser {
         Regex("""\[STREAM (\d+)\] Established DTLS connection""")
     private val STREAM_CLOSED_REGEX =
         Regex("""\[STREAM (\d+)\] Closed DTLS connection""")
+    private val MULTI_PROVIDER_TOTAL_REGEX =
+        Regex("""multi-provider:\s*\d+\s*(?:hub accounts|VK links),\s*(\d+)\s*total streams""")
     private val TCP_ACTIVE_REGEX =
         Regex("""\[session \d+\] (?:connected|disconnected) \(active: (\d+)\)""")
     private val TCP_TOTAL_REGEX =
@@ -40,8 +43,19 @@ object CoreLogParser {
             events += CoreLogEvent.CaptchaResolved
         }
 
-        if (STREAM_ESTABLISHED_REGEX.containsMatchIn(line)) events += CoreLogEvent.StreamEstablished
-        if (STREAM_CLOSED_REGEX.containsMatchIn(line)) events += CoreLogEvent.StreamClosed
+        STREAM_ESTABLISHED_REGEX.find(line)?.let {
+            val id = it.groupValues[1].toIntOrNull() ?: 1
+            events += CoreLogEvent.StreamEstablished(id)
+        }
+        STREAM_CLOSED_REGEX.find(line)?.let {
+            val id = it.groupValues[1].toIntOrNull() ?: 1
+            events += CoreLogEvent.StreamClosed(id)
+        }
+        MULTI_PROVIDER_TOTAL_REGEX.find(line)?.let {
+            it.groupValues[1].toIntOrNull()?.let { total ->
+                events += CoreLogEvent.TotalStreams(total)
+            }
+        }
         TCP_TOTAL_REGEX.find(line)?.let {
             events += CoreLogEvent.TcpTotal(it.groupValues[1].toInt())
         }
@@ -69,28 +83,49 @@ object CoreLogParser {
 }
 
 class CoreConnectionTracker(
-    private val udpTotal: Int,
+    private var udpTotal: Int,
     tcpMode: Boolean
 ) {
     private var isTcp = tcpMode
-    // Считаем инкрементами, а не Set, так как ядро может дублировать streamID (id=1).
-    private var udpActive = 0
+    private val udpActiveStreams = mutableSetOf<Int>()
+    private var anonymousUdpActive = 0
     private var tcpActive = 0
     private var tcpTotal = 0
 
-    val active: Int get() = if (isTcp) tcpActive else udpActive
-    val total: Int get() = if (isTcp) tcpTotal else udpTotal
+    val active: Int
+        get() = if (isTcp) {
+            tcpActive
+        } else {
+            val count = udpActiveStreams.size + anonymousUdpActive
+            if (udpTotal > 0) minOf(count, udpTotal) else count
+        }
+
+    val total: Int
+        get() = if (isTcp) tcpTotal else udpTotal
 
     val hasConnection: Boolean get() = active > 0
 
     fun apply(event: CoreLogEvent): Boolean = when (event) {
-        CoreLogEvent.StreamEstablished -> {
-            udpActive += 1
+        is CoreLogEvent.StreamEstablished -> {
             isTcp = false
+            if (event.streamId > 0) {
+                udpActiveStreams.add(event.streamId)
+            } else {
+                anonymousUdpActive += 1
+            }
             true
         }
-        CoreLogEvent.StreamClosed -> {
-            if (udpActive > 0) udpActive -= 1
+        is CoreLogEvent.StreamClosed -> {
+            if (event.streamId > 0) {
+                udpActiveStreams.remove(event.streamId)
+            } else if (anonymousUdpActive > 0) {
+                anonymousUdpActive -= 1
+            }
+            true
+        }
+        is CoreLogEvent.TotalStreams -> {
+            udpTotal = event.total
+            isTcp = false
             true
         }
         is CoreLogEvent.TcpTotal -> {

@@ -42,20 +42,7 @@ CoreArgs {
             add("-hub-cache"); add(cfg.hubCache.trim().ifBlank { DEFAULT_HUB_CACHE })
         }
         add("-listen"); add(cfg.localPort)
-        val numProviders = if (cfg.provider == Provider.HUB) {
-            cfg.hubUrl.split(",").map { it.trim() }.filter { it.isNotEmpty() }.size.coerceAtLeast(1)
-        } else if (cfg.provider == Provider.VK) {
-            cfg.vkLink.split(",").map { it.trim() }.filter { it.isNotEmpty() }.size.coerceAtLeast(1)
-        } else {
-            1
-        }
-        val effectiveThreads = if (cfg.tunnelTransport == TunnelTransport.VK_XRAY) {
-            val maxPerProvider = maxOf(1, MAX_VK_XRAY_THREADS / numProviders)
-            val userThreads = if (cfg.threads > 0) cfg.threads else ClientConfig.DEFAULT_THREADS
-            minOf(userThreads, maxPerProvider)
-        } else {
-            cfg.threads
-        }
+        val effectiveThreads = effectivePerProviderThreads(cfg)
         if (effectiveThreads > 0) { add("-n"); add(effectiveThreads.toString()) }
         // -streams-per-cred читает только vk-провайдер (config.go): под хабом креды
         // приходят готовыми, флаг никуда не доедет.
@@ -105,6 +92,38 @@ CoreArgs {
      * деградируют и приводят к head-of-line blocking и сбросам TCP, в отличие от WireGuard UDP.
      */
     const val MAX_VK_XRAY_THREADS = 20
+
+    fun numProviders(cfg: ClientConfig): Int = when (cfg.provider) {
+        Provider.HUB -> cfg.hubUrl.split(",").map { it.trim() }.filter { it.isNotEmpty() }.size.coerceAtLeast(1)
+        Provider.VK -> cfg.vkLink.split(",").map { it.trim() }.filter { it.isNotEmpty() }.size.coerceAtLeast(1)
+        else -> 1
+    }
+
+    /**
+     * Число потоков на одного провайдера (-n):
+     * В ядре (free-turn-proxy) аргумент -n задаёт число потоков НА ОДИН аккаунт/ссылку
+     * (totalStreams = cfg.TURN.N * max(providerCount, 1)).
+     * Поэтому для достижения суммарного лимита cfg.threads мы делим его на число провайдеров.
+     * Для VK_XRAY суммарный лимит дополнительно ограничен MAX_VK_XRAY_THREADS (20).
+     */
+    fun effectivePerProviderThreads(cfg: ClientConfig): Int {
+        val providers = numProviders(cfg)
+        val userThreads = if (cfg.threads > 0) cfg.threads else ClientConfig.DEFAULT_THREADS
+        val targetTotal = if (cfg.tunnelTransport == TunnelTransport.VK_XRAY) {
+            minOf(userThreads, MAX_VK_XRAY_THREADS)
+        } else {
+            userThreads
+        }
+        return maxOf(1, targetTotal / providers)
+    }
+
+    /**
+     * Ожидаемое суммарное число потоков ядра.
+     */
+    fun effectiveTotalStreams(cfg: ClientConfig): Int {
+        val providers = numProviders(cfg)
+        return effectivePerProviderThreads(cfg) * providers
+    }
 
     // Секреты: лог виден на экране и шарится пользователем.
     private val SENSITIVE_FLAGS = setOf("-obf-key", "-link", "-client-id", "-hub-token", "-hub-url")

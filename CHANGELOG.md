@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.8.1](https://github.com/levnasru/turn-proxy-android/compare/v3.8.0...v3.8.1) (2026-09-19)
+
+
+### Bug Fixes (Hotfix)
+
+* hotfix: fix unbounded stream counter and thread multiplier bug on WireGuard & AmneziaWG
+* fix thread calculation for multi-provider setups so configured thread limit applies to total streams across all accounts
+* track active streams by stream ID with Set-based bounded tracker, eliminating drift on reconnects and stream rotations
+* bundle updated FreeTurn core v2.6.0 with multi-provider totalStreams fixes
+
+
 ## [3.8.0](https://github.com/levnasru/turn-proxy-android/compare/v3.7.0...v3.8.0) (2026-09-19)
 
 

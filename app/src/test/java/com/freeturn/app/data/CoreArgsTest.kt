@@ -58,7 +58,7 @@ class CoreArgsTest {
     }
 
     @Test
-    fun wireguard_keepsConfiguredThreads() {
+    fun wireguard_multiProvider_dividesThreadsPerProviderSoTotalMatchesConfig() {
         val cfg = ClientConfig(
             serverAddress = "89.124.71.77:56005",
             provider = Provider.HUB,
@@ -75,11 +75,47 @@ class CoreArgsTest {
 
         val nIdx = args.indexOf("-n")
         assertTrue(nIdx >= 0)
-        assertEquals("80", args[nIdx + 1])
+        // 2 accounts, threads=80 -> -n 40 (40 * 2 = 80 total)
+        assertEquals("40", args[nIdx + 1])
+        assertEquals(80, CoreArgs.effectiveTotalStreams(cfg))
 
         val transportIdx = args.indexOf("-transport")
         assertTrue(transportIdx >= 0)
         assertEquals("udp", args[transportIdx + 1])
+    }
+
+    @Test
+    fun wireguard_singleProvider_usesFullThreads() {
+        val cfg = ClientConfig(
+            serverAddress = "89.124.71.77:56005",
+            provider = Provider.HUB,
+            hubUrl = "https://89.124.71.77:8445/turn-creds",
+            threads = 80,
+            useUdp = true,
+            tunnelTransport = TunnelTransport.WIREGUARD
+        )
+        val args = CoreArgs.client(cfg, ServerOpts())
+        val nIdx = args.indexOf("-n")
+        assertTrue(nIdx >= 0)
+        assertEquals("80", args[nIdx + 1])
+        assertEquals(80, CoreArgs.effectiveTotalStreams(cfg))
+    }
+
+    @Test
+    fun wireguard_fourProviders_dividesTo20Each() {
+        val cfg = ClientConfig(
+            serverAddress = "89.124.71.77:56005",
+            provider = Provider.HUB,
+            hubUrl = "https://89.124.71.77:8445/turn-creds,https://89.124.71.77:8446/turn-creds,https://89.124.71.77:8447/turn-creds,https://89.124.71.77:8448/turn-creds",
+            threads = 80,
+            useUdp = true,
+            tunnelTransport = TunnelTransport.WIREGUARD
+        )
+        val args = CoreArgs.client(cfg, ServerOpts())
+        val nIdx = args.indexOf("-n")
+        assertTrue(nIdx >= 0)
+        assertEquals("20", args[nIdx + 1])
+        assertEquals(80, CoreArgs.effectiveTotalStreams(cfg))
     }
 
     @Test
