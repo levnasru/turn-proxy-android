@@ -18,8 +18,17 @@ data class PortalConfig(
     val obfProfile: String,
     val obfKey: String,
     val streams: Int,
-    val wgConfig: String
+    val wgConfig: String,
+    val xraySubscriptionUrl: String? = null,
+    val splitMode: String? = null
 )
+
+sealed interface ConfigFetchResult {
+    data class Success(val config: PortalConfig, val etag: String?) : ConfigFetchResult
+    data object NotModified : ConfigFetchResult
+    data class Unauthorized(val message: String) : ConfigFetchResult
+    data class Error(val message: String) : ConfigFetchResult
+}
 
 /**
  * Self-service портал (vkturn-ios-portal, lft.levnas.ru) - те же /api/v1/login +
@@ -45,23 +54,33 @@ class PortalApiClient(private val baseUrl: String = DEFAULT_BASE_URL) {
         }
     }
 
-    suspend fun fetchConfig(token: String): PortalConfig = withContext(Dispatchers.IO) {
+    suspend fun fetchConfigWithEtag(token: String, etag: String? = null): ConfigFetchResult = withContext(Dispatchers.IO) {
         val conn = (URL("$baseUrl/api/v1/config?device=android").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
+            connectTimeout = 8_000
+            readTimeout = 8_000
             setRequestProperty("Authorization", "Bearer $token")
+            if (!etag.isNullOrBlank()) {
+                setRequestProperty("If-None-Match", etag)
+            }
         }
         try {
+            if (conn.responseCode == HttpURLConnection.HTTP_NOT_MODIFIED) {
+                return@withContext ConfigFetchResult.NotModified
+            }
+            if (conn.responseCode == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                return@withContext ConfigFetchResult.Unauthorized("token expired or invalid")
+            }
             if (conn.responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
-                throw IOException("на портале для этого логина не настроен доступ для Android")
+                return@withContext ConfigFetchResult.Error("на портале для этого логина не настроен доступ для Android")
             }
             if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("config: HTTP ${conn.responseCode}")
+                return@withContext ConfigFetchResult.Error("config: HTTP ${conn.responseCode}")
             }
+            val newEtag = conn.getHeaderField("ETag")
             val json = JSONObject(conn.inputStream.bufferedReader().readText())
             val urls = json.optJSONArray("hubUrls")
-            PortalConfig(
+            val cfg = PortalConfig(
                 hubUrls = urls?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }.orEmpty(),
                 hubPin = json.optString("hubPin"),
                 hubToken = json.optString("hubToken"),
@@ -69,10 +88,24 @@ class PortalApiClient(private val baseUrl: String = DEFAULT_BASE_URL) {
                 obfProfile = json.optString("obfProfile"),
                 obfKey = json.optString("obfKey"),
                 streams = json.optInt("streams", DEFAULT_STREAMS),
-                wgConfig = json.optString("wgConfig")
+                wgConfig = json.optString("wgConfig"),
+                xraySubscriptionUrl = json.optString("xraySubscriptionUrl").takeIf { it.isNotBlank() },
+                splitMode = json.optString("splitMode").takeIf { it.isNotBlank() }
             )
+            ConfigFetchResult.Success(cfg, newEtag)
+        } catch (e: Exception) {
+            ConfigFetchResult.Error(e.message ?: "network error")
         } finally {
             conn.disconnect()
+        }
+    }
+
+    suspend fun fetchConfig(token: String): PortalConfig = withContext(Dispatchers.IO) {
+        when (val res = fetchConfigWithEtag(token, null)) {
+            is ConfigFetchResult.Success -> res.config
+            is ConfigFetchResult.Error -> throw IOException(res.message)
+            is ConfigFetchResult.Unauthorized -> throw IOException(res.message)
+            is ConfigFetchResult.NotModified -> throw IOException("unexpected 304 without etag")
         }
     }
 

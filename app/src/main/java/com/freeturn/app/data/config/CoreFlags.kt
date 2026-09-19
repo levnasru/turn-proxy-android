@@ -53,13 +53,15 @@ object ClientId {
 object TunnelTransport {
     const val NONE = "none"
     const val WIREGUARD = "wireguard"
+    const val VK_XRAY = "vk_xray"
+    const val AMNEZIA = "amnezia_wg"
     // REALITY - прямой VLESS+XHTTP+Reality через встроенный libXray, БЕЗ нашего
     // TURN-транспорта (не подпроцесс - Go-библиотека в том же процессе, см.
     // RealityVpnService). Для родни без строгого вайтлиста - тот же профиль, что
     // они раньше гоняли в отдельном v2rayNG, теперь в одном приложении.
     const val REALITY = "reality"
     const val DEFAULT_TUNNEL_NAME = "freeturn-wg"
-    val VALUES = listOf(NONE, WIREGUARD, REALITY)
+    val VALUES = listOf(NONE, WIREGUARD, VK_XRAY, AMNEZIA, REALITY)
 }
 
 object SplitTunnelMode {

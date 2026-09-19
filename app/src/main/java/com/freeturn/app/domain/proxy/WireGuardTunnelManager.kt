@@ -10,8 +10,13 @@ import com.wireguard.android.backend.GoBackend
 import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
 import java.io.ByteArrayInputStream
+import java.net.InetAddress
+import java.net.Inet4Address
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicReference
+import com.freeturn.app.data.config.parseBypassRules
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -29,20 +34,42 @@ class WireGuardTunnelManager(context: Context) {
 
     /** Поднять туннель после того как прокси-ядро установило соединение. No-op без WG-конфига. */
     suspend fun startAfterProxyReady(cfg: ClientConfig) {
-        if (!cfg.wireGuardActive) return
+        if (!cfg.wireGuardActive && !cfg.amneziaActive) return
         val rawConfig = cfg.wireGuardConfig.trim()
         if (rawConfig.isBlank()) {
             ProxyServiceState.addLog("WireGuard: конфиг пуст, запуск пропущен")
             return
         }
 
+        val parsedBypass = parseBypassRules(cfg.bypassRules)
+        val resolvedDomainCidrs = mutableListOf<String>()
+        if (parsedBypass.domains.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                for (domain in parsedBypass.domains) {
+                    val host = domain.removePrefix("*.").trim()
+                    if (host.isNotBlank() && !host.startsWith(".")) {
+                        runCatching {
+                            val addrs = InetAddress.getAllByName(host)
+                            for (addr in addrs) {
+                                if (addr is Inet4Address) {
+                                    resolvedDomainCidrs += "${addr.hostAddress}/32"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val customExclusions = (parsedBypass.cidrs + resolvedDomainCidrs).distinct()
+
         val name = cfg.wireGuardTunnelName.trim().ifBlank { TunnelTransport.DEFAULT_TUNNEL_NAME }
         val endpoint = cfg.localPort.trim()
         val preparedConfig = rawConfig
+            .stripAmneziaHeaders()
             .withLocalEndpoint(endpoint)
             .withMtu(ClientConfig.WG_MTU)
             .withPersistentKeepalive(25)
-            .withLanBypass()
+            .withLanBypass(customExclusions)
             .withSplitTunnel(
                 appPackage = appContext.packageName,
                 mode = cfg.splitTunnelMode,
@@ -186,7 +213,7 @@ internal val PRIVATE_IPV4_CIDRS = listOf(
     "255.255.255.255/32", "224.0.0.0/4"
 )
 
-private fun String.extractTunnelSubnet(): String? {
+internal fun String.extractTunnelSubnet(): String? {
     var inInterface = false
     for (line in lineSequence()) {
         val s = line.trim()
@@ -194,18 +221,21 @@ private fun String.extractTunnelSubnet(): String? {
             inInterface = s.equals("[Interface]", ignoreCase = true)
         }
         if (inInterface && s.startsWith("Address", ignoreCase = true) && s.contains("=")) {
-            val addr = s.substringAfter("=").trim().split(",").firstOrNull()?.trim() ?: continue
-            val ip = addr.substringBefore("/")
-            val octets = ip.split(".")
-            if (octets.size == 4) {
-                return "${octets[0]}.${octets[1]}.${octets[2]}.0/24"
+            val addrs = s.substringAfter("=").trim().split(",")
+            for (rawAddr in addrs) {
+                val addr = rawAddr.trim()
+                val ip = addr.substringBefore("/")
+                val octets = ip.split(".")
+                if (octets.size == 4 && octets.all { it.toIntOrNull() in 0..255 }) {
+                    return "${octets[0]}.${octets[1]}.${octets[2]}.0/24"
+                }
             }
         }
     }
     return null
 }
 
-private fun String.withLanBypass(): String {
+private fun String.withLanBypass(customExcludedCidrs: List<String> = emptyList()): String {
     val tunnelSubnet = extractTunnelSubnet()
     var inPeer = false
     val lines = lineSequence().map { line ->
@@ -214,7 +244,7 @@ private fun String.withLanBypass(): String {
             inPeer = section.equals("[Peer]", ignoreCase = true)
         }
         if (inPeer && section.startsWith("AllowedIPs", ignoreCase = true) && section.contains("=")) {
-            "AllowedIPs = ${excludeLanFromAllowedIps(section.substringAfter("=").trim(), tunnelSubnet)}"
+            "AllowedIPs = ${excludeLanFromAllowedIps(section.substringAfter("=").trim(), tunnelSubnet, customExcludedCidrs)}"
         } else {
             line
         }
@@ -222,14 +252,27 @@ private fun String.withLanBypass(): String {
     return lines.joinToString("\n")
 }
 
-internal fun excludeLanFromAllowedIps(value: String, keepSubnet: String? = null): String {
+internal fun String.stripAmneziaHeaders(): String {
+    val amneziaKeys = setOf("jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4")
+    return lineSequence().filterNot { line ->
+        val trimmed = line.trim()
+        val key = trimmed.substringBefore("=").trim().lowercase()
+        key in amneziaKeys
+    }.joinToString("\n")
+}
+
+internal fun excludeLanFromAllowedIps(
+    value: String,
+    keepSubnet: String? = null,
+    customExcludedCidrs: List<String> = emptyList()
+): String {
     val entries = value.split(",").map { it.trim() }.filter { it.isNotBlank() }
     val ipv6 = entries.filter { it.contains(":") }
     val ipv4Ranges = entries.filterNot { it.contains(":") }.mapNotNull(::cidrToRange)
     if (ipv4Ranges.isEmpty()) return value
 
     val keepRange = keepSubnet?.let(::cidrToRange)
-    val privateRanges = PRIVATE_IPV4_CIDRS.mapNotNull(::cidrToRange)
+    val privateRanges = (PRIVATE_IPV4_CIDRS + customExcludedCidrs).mapNotNull(::cidrToRange)
     val effectivePrivateRanges = if (keepRange != null) {
         subtractRanges(mergeRanges(privateRanges), listOf(keepRange))
     } else {

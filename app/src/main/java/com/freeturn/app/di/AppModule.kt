@@ -22,13 +22,13 @@ val appModule = module {
     single { AppPreferences(androidContext()) }
     single { RealityStateBridge(androidContext()) }
     single<ProxyServiceLauncher> { AndroidProxyServiceLauncher(androidContext(), get(), get()) }
-    single { LocalProxyManager(get()) }
+    single { XraySubscriptionFetcher() }
+    single { PortalApiClient() }
+    single { LocalProxyManager(get(), get(), get(), get()) }
     single { AppUpdater(androidContext()) }
     single { BackupManager(get()) }
     single { ProxyOrchestrator(get(), get()) }
     single { LinkImportBus() }
-    single { XraySubscriptionFetcher() }
-    single { PortalApiClient() }
 
     viewModelOf(::ProxyViewModel)
     viewModelOf(::SettingsViewModel)

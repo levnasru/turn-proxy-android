@@ -33,8 +33,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.net.InetAddress
+import com.freeturn.app.data.config.parseBypassRules
+import com.freeturn.app.data.config.ParsedBypassRules
 import libXray.DialerController
 import libXray.LibXray
+import org.json.JSONArray
 import org.json.JSONObject
 import org.koin.android.ext.android.inject
 
@@ -58,6 +61,8 @@ class RealityVpnService : VpnService() {
     private lateinit var serviceScope: CoroutineScope
     private lateinit var notifier: ProxyNotifier
     private val prefs: AppPreferences by inject()
+    @Volatile
+    private var isVkXray = false
 
     // Xray-core сам не под VpnService.protect() - его исходящие сокеты к настоящему
     // серверу обязаны идти МИМО туннеля, который он же создаёт, иначе петля (тот же
@@ -66,6 +71,14 @@ class RealityVpnService : VpnService() {
     private val dialerController = object : DialerController {
         override fun protectFd(fd: Long): Boolean {
             if (tornDown.get()) return false
+            if (isVkXray) {
+                // В режиме VK-Xray единственный исходящий адрес - локальный 127.0.0.1:9000
+                // ядра libfreeturn. VpnService.protect() привязывает сокет через SO_BINDTODEVICE /
+                // fwmark к физическому сетевому интерфейсу (wlan0/rmnet), из-за чего попытка
+                // соединиться с 127.0.0.1 намертво отбрасывается ядром Linux как martian packet.
+                // При этом защита от петли туннеля уже обеспечена через addDisallowedApplication(packageName).
+                return true
+            }
             return try {
                 protect(fd.toInt())
             } catch (e: Exception) {
@@ -77,8 +90,13 @@ class RealityVpnService : VpnService() {
     private val stateSink = RealityStateSink()
 
     private val incomingHandler = Handler(Looper.getMainLooper()) { msg ->
-        if (msg.what == RealityIpc.MSG_REGISTER_CLIENT) {
-            msg.replyTo?.let { stateSink.registerClient(it) }
+        when (msg.what) {
+            RealityIpc.MSG_REGISTER_CLIENT -> {
+                msg.replyTo?.let { stateSink.registerClient(it) }
+            }
+            RealityIpc.MSG_UNREGISTER_CLIENT -> {
+                msg.replyTo?.let { stateSink.unregisterClient(it) }
+            }
         }
         true
     }
@@ -145,25 +163,30 @@ class RealityVpnService : VpnService() {
         // AppPreferences в этом процессе видело бы конфиг только на момент ПЕРВОГО
         // старта процесса, не текущий.
         val xrayConfigOverride = intent?.getStringExtra(ProxyActions.EXTRA_XRAY_CONFIG)
+        val bypassRulesOverride = intent?.getStringExtra(ProxyActions.EXTRA_BYPASS_RULES)
+        isVkXray = intent?.getBooleanExtra(ProxyActions.EXTRA_IS_VK_XRAY, false) ?: false
         stateSink.setRunning(true)
         acquireWakeLock()
-        stateSink.addLog("Reality: запуск")
-        serviceScope.launch { startXray(xrayConfigOverride) }
+        stateSink.addLog(if (isVkXray) "VK-Xray: запуск туннеля" else "Reality: запуск")
+        serviceScope.launch { startXray(xrayConfigOverride, bypassRulesOverride) }
         return START_STICKY
     }
 
-    private suspend fun startXray(xrayConfigOverride: String?) {
+    private suspend fun startXray(xrayConfigOverride: String?, bypassRulesOverride: String? = null) {
         val rawJson = xrayConfigOverride ?: prefs.clientConfigFlow.first().xrayConfig
         if (rawJson.isBlank()) {
             fail("Xray-конфиг не задан")
             return
         }
+        val rawBypass = bypassRulesOverride ?: prefs.clientConfigFlow.first().bypassRules
+        val parsedBypass = parseBypassRules(rawBypass)
 
         val builder = Builder()
-            .setSession("VK-TURN Reality")
+            .setSession(if (isVkXray) "VK-TURN Xray" else "VK-TURN Reality")
             .setMtu(ClientConfig.WG_MTU)
             .addAddress("172.19.0.1", 30)
             .addDnsServer("1.1.1.1")
+            .addDnsServer("8.8.8.8")
         // RFC1918/link-local/loopback (принтер/NAS/роутер/KDE Connect/Immich по
         // локальному IP) должны остаться доступны поверх поднятого туннеля.
         // Раньше был голый addRoute(0.0.0.0, 0) без единого исключения. Комплемент
@@ -173,16 +196,17 @@ class RealityVpnService : VpnService() {
         // "unreachable", а не откатывается на Wi-Fi. Builder.excludeRoute() (API 33+)
         // - единственный API, который явно помечает диапазон как невладеемый VPN и
         // получает откат на другую сеть; на нём и держим полный 0.0.0.0/0.
+        val allExcludedCidrs = (PRIVATE_IPV4_CIDRS + parsedBypass.cidrs).distinct()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             builder.addRoute("0.0.0.0", 0)
-            PRIVATE_IPV4_CIDRS.forEach { cidr ->
+            allExcludedCidrs.forEach { cidr ->
                 val (addr, prefix) = cidr.split("/")
                 runCatching { builder.excludeRoute(IpPrefix(InetAddress.getByName(addr), prefix.toInt())) }
             }
         } else {
             // До API 33 excludeRoute() нет - комплемент-список не даёт гарантии
             // отвала на Wi-Fi при промахе, но не хуже прежнего голого 0.0.0.0/0.
-            excludeLanFromAllowedIps("0.0.0.0/0").split(",").forEach { cidr ->
+            excludeLanFromAllowedIps("0.0.0.0/0", customExcludedCidrs = parsedBypass.cidrs).split(",").forEach { cidr ->
                 val (addr, prefix) = cidr.trim().split("/")
                 builder.addRoute(addr, prefix.toInt())
             }
@@ -200,14 +224,18 @@ class RealityVpnService : VpnService() {
         tunFd = pfd
 
         val configWithTun = try {
-            ensureTunInbound(stripDnsGeoDomains(stripExternalGeoRouting(rawJson)), pfd.fd)
+            val stripped = stripDnsGeoDomains(stripExternalGeoRouting(rawJson))
+            val withBypass = injectBypassRouting(stripped, parsedBypass)
+            ensureTunInbound(withBypass, pfd.fd)
         } catch (e: Exception) {
             fail("Xray-конфиг невалиден: ${e.message}")
             return
         }
 
         LibXray.registerDialerController(dialerController)
-        runCatching { LibXray.setDNS(dialerController, "1.1.1.1:53") }
+        if (!isVkXray) {
+            runCatching { LibXray.setDNS(dialerController, "1.1.1.1:53") }
+        }
 
         // Забандленная версия libXray - официальный релиз v26.7.28 (см. память
         // android-reality-libxray-2026-08-10.md: `gh release download v26.7.28`), НЕ
@@ -224,22 +252,26 @@ class RealityVpnService : VpnService() {
         // объектного графа) и читается из КОРНЯ самого xray-конфига, не из invoke-
         // конверта (см. ensureTunInbound - кладёт "env" туда же, где "inbounds").
         val request = JSONObject().apply {
-            put("apiVersion", 1)
-            put("method", "runXrayFromJson")
-            put("payload", JSONObject().put("configJSON", configWithTun))
+            put("apiVersion", LibXray.LibXrayAPIVersion)
+            put("method", "runXray")
+            put("payload", JSONObject().put("xrayJson", configWithTun))
         }
         val response = try {
             JSONObject(LibXray.invoke(request.toString()))
         } catch (e: Exception) {
+            android.util.Log.e("RealityVpnService", "libXray.invoke упал", e)
             fail("libXray.invoke упал: ${e.message}")
             return
         }
         if (!response.optBoolean("success", false)) {
-            fail("runXray: ${response.optString("error", "unknown")}")
+            val err = response.optString("error", "unknown")
+            android.util.Log.e("RealityVpnService", "runXray failed: $err")
+            fail("runXray: $err")
             return
         }
 
-        stateSink.addLog("Reality: туннель поднят")
+        android.util.Log.i("RealityVpnService", "runXray succeeded, isVkXray=$isVkXray")
+        stateSink.addLog(if (isVkXray) "VK-Xray: туннель поднят" else "Reality: туннель поднят")
         stateSink.setStartupResult(StartupResult.Success)
         // connectionStats.active - число активных TURN-стримов VK-ядра, у Reality
         // такого понятия нет, а LocalProxyManager решает Running/Connecting именно по
@@ -429,7 +461,7 @@ class RealityVpnService : VpnService() {
         // процесс, unbind() на него не влияет.
         Thread {
             val stopRequest = JSONObject().apply {
-                put("apiVersion", 1)
+                put("apiVersion", LibXray.LibXrayAPIVersion)
                 put("method", "stopXray")
                 put("payload", JSONObject())
             }
@@ -455,6 +487,75 @@ class RealityVpnService : VpnService() {
     }
 }
 
+// Внедряет правила обхода (bypass/whitelist): трафик к указанным доменам и IP
+// направляется в direct-аутбаунд (freedom) в обход Reality-прокси.
+internal fun injectBypassRouting(rawJson: String, bypass: ParsedBypassRules): String {
+    if (bypass.domains.isEmpty() && bypass.cidrs.isEmpty()) {
+        return rawJson
+    }
+    val root = JSONObject(rawJson)
+
+    val outbounds = root.optJSONArray("outbounds") ?: JSONArray().also { root.put("outbounds", it) }
+    var directTag = "direct"
+    var foundFreedom = false
+    for (i in 0 until outbounds.length()) {
+        val o = outbounds.optJSONObject(i) ?: continue
+        val protocol = o.optString("protocol")
+        val tag = o.optString("tag")
+        if (protocol == "freedom") {
+            foundFreedom = true
+            directTag = if (tag.isNotBlank()) tag else "direct"
+            if (tag.isBlank()) o.put("tag", "direct")
+            break
+        }
+    }
+    if (!foundFreedom) {
+        outbounds.put(JSONObject().apply {
+            put("protocol", "freedom")
+            put("tag", "direct")
+        })
+        directTag = "direct"
+    }
+
+    val routing = root.optJSONObject("routing") ?: JSONObject().also { root.put("routing", it) }
+    val rules = routing.optJSONArray("rules") ?: JSONArray().also { routing.put("rules", it) }
+
+    val bypassRule = JSONObject().apply {
+        put("type", "field")
+        put("outboundTag", directTag)
+    }
+
+    if (bypass.domains.isNotEmpty()) {
+        val domainArr = JSONArray()
+        for (d in bypass.domains) {
+            val clean = d.removePrefix("*.").trim()
+            if (clean.isNotBlank()) {
+                domainArr.put("domain:$clean")
+            }
+        }
+        if (domainArr.length() > 0) {
+            bypassRule.put("domain", domainArr)
+        }
+    }
+
+    if (bypass.cidrs.isNotEmpty()) {
+        val ipArr = JSONArray()
+        for (cidr in bypass.cidrs) {
+            ipArr.put(cidr)
+        }
+        bypassRule.put("ip", ipArr)
+    }
+
+    val newRules = JSONArray()
+    newRules.put(bypassRule)
+    for (i in 0 until rules.length()) {
+        newRules.put(rules.get(i))
+    }
+    routing.put("rules", newRules)
+
+    return root.toString()
+}
+
 /**
  * Заменяет прямые вызовы ProxyServiceState внутри RealityVpnService: этот сервис
  * с этого момента живёт в отдельном процессе (:reality, см. AndroidManifest.xml),
@@ -469,7 +570,8 @@ class RealityVpnService : VpnService() {
  * новому клиенту - без синхронизации это гонка данных без happens-before.
  */
 private class RealityStateSink {
-    private val clients = java.util.concurrent.CopyOnWriteArrayList<Messenger>()
+    private val clients = java.util.concurrent.ConcurrentHashMap<IBinder, Messenger>()
+    private val deathRecipients = java.util.concurrent.ConcurrentHashMap<IBinder, IBinder.DeathRecipient>()
     private val pendingLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
 
     private var running = false
@@ -496,9 +598,36 @@ private class RealityStateSink {
     /** Новый клиент подключился - сразу шлём полный снепшот, не только будущие изменения. */
     @Synchronized
     fun registerClient(client: Messenger) {
-        clients += client
+        val binder = client.binder ?: return
+        unregister(binder)
+
+        val recipient = IBinder.DeathRecipient {
+            unregister(binder)
+        }
+        try {
+            binder.linkToDeath(recipient, 0)
+            deathRecipients[binder] = recipient
+        } catch (e: RemoteException) {
+            return
+        }
+
+        clients[binder] = client
         sendTo(client, RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
         for (text in pendingLogs) sendTo(client, RealityIpc.MSG_LOG_LINE, realityLogBundle(text))
+    }
+
+    @Synchronized
+    fun unregisterClient(client: Messenger) {
+        val binder = client.binder ?: return
+        unregister(binder)
+    }
+
+    @Synchronized
+    fun unregister(binder: IBinder) {
+        clients.remove(binder)
+        deathRecipients.remove(binder)?.let { recipient ->
+            runCatching { binder.unlinkToDeath(recipient, 0) }
+        }
     }
 
     @Synchronized
@@ -561,11 +690,13 @@ private class RealityStateSink {
     private fun broadcastState() = broadcastAll(RealityIpc.MSG_STATE_UPDATE, currentState().toBundle())
 
     private fun broadcastAll(what: Int, bundle: android.os.Bundle) {
-        val dead = mutableListOf<Messenger>()
-        for (client in clients) {
-            if (!sendTo(client, what, bundle)) dead += client
+        val dead = mutableListOf<IBinder>()
+        for ((binder, client) in clients) {
+            if (!sendTo(client, what, bundle)) dead += binder
         }
-        clients.removeAll(dead)
+        for (binder in dead) {
+            unregister(binder)
+        }
     }
 
     private fun sendTo(client: Messenger, what: Int, bundle: android.os.Bundle): Boolean = try {

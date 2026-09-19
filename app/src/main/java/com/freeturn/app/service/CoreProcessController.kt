@@ -1,12 +1,18 @@
 package com.freeturn.app.service
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import com.freeturn.app.R
 import com.freeturn.app.data.AppPreferences
 import com.freeturn.app.data.CoreArgs
+import com.freeturn.app.data.config.ClientConfig
+import com.freeturn.app.data.config.TunnelTransport
+import com.freeturn.app.data.config.VkTurnXrayConfigBuilder
+import com.freeturn.app.data.config.parseBypassRules
 import com.freeturn.app.domain.CaptchaSession
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.proxy.CoreConnectionTracker
@@ -16,6 +22,7 @@ import com.freeturn.app.domain.StartupResult
 import com.freeturn.app.domain.proxy.MAX_PROXY_RESTARTS
 import com.freeturn.app.domain.proxy.ProxyServiceState
 import com.freeturn.app.domain.proxy.WireGuardTunnelManager
+import com.wireguard.android.backend.BackendException
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -119,21 +126,30 @@ class CoreProcessController(
     }
 
     /**
-     * Кнопка WG. Гасит/поднимает туннель поверх уже работающего ядра - смена
+     * Кнопка WG / туннеля. Гасит/поднимает туннель поверх уже работающего ядра - смена
      * внешнего VPN больше не стоит пересоздания TURN-сессии.
      */
     fun setWireGuardEnabled(enabled: Boolean) {
         wgWanted.set(enabled)
         scope.launch {
+            val cfg = prefs.clientConfigFlow.first()
             if (enabled) {
                 if (process.get() == null) {
-                    ProxyServiceState.addLog("WireGuard: туннель не запущен, включать нечего")
+                    ProxyServiceState.addLog("Туннель: ядро не запущено, включать нечего")
                     return@launch
                 }
-                startWireGuard(prefs.clientConfigFlow.first())
+                if (cfg.tunnelTransport == TunnelTransport.VK_XRAY) {
+                    startXrayTunnel(cfg)
+                } else {
+                    startWireGuard(cfg)
+                }
             } else {
-                wireGuard.stop()
-                ProxyServiceState.setWireGuardUp(false)
+                if (cfg.tunnelTransport == TunnelTransport.VK_XRAY) {
+                    stopXrayTunnel()
+                } else {
+                    wireGuard.stop()
+                    ProxyServiceState.setWireGuardUp(false)
+                }
                 notifier.setStatus(context.getString(R.string.proxy_active), active = true)
             }
         }
@@ -141,18 +157,63 @@ class CoreProcessController(
 
     /** Поднять WG под текущий конфиг. Ошибку логируем, ядро не роняем. */
     private suspend fun startWireGuard(cfg: com.freeturn.app.data.config.ClientConfig): Boolean {
-        if (!cfg.wireGuardActive || !wgWanted.get()) return false
+        if ((!cfg.wireGuardActive && !cfg.amneziaActive) || !wgWanted.get()) return false
         return try {
             wireGuard.startAfterProxyReady(cfg)
             ProxyServiceState.setWireGuardUp(true)
             notifier.setStatus(context.getString(R.string.tunnel_active), active = true)
             true
         } catch (e: Exception) {
-            val message = e.message ?: e.javaClass.simpleName
+            val message = if (e is BackendException) {
+                "${e.reason}: ${e.message ?: e.cause?.message ?: ""}".trimEnd(' ', ':')
+            } else {
+                e.message ?: e.javaClass.simpleName
+            }
             ProxyServiceState.addLog("WireGuard: ошибка запуска - $message")
             ProxyServiceState.setWireGuardUp(false)
             notifier.setStatus(context.getString(R.string.notif_proxy_wireguard_error))
             false
+        }
+    }
+
+    private fun startXrayTunnel(cfg: ClientConfig) {
+        try {
+            val parsedBypass = parseBypassRules(cfg.bypassRules)
+            val xrayConfig = VkTurnXrayConfigBuilder.build(
+                bypassDomains = parsedBypass.domains,
+                bypassIps = parsedBypass.cidrs,
+                localPort = cfg.localPort.substringAfterLast(":").toIntOrNull() ?: VkTurnXrayConfigBuilder.DEFAULT_LOCAL_PORT
+            )
+            val intent = Intent(context, RealityVpnService::class.java).apply {
+                putExtra(ProxyActions.EXTRA_XRAY_CONFIG, xrayConfig)
+                putExtra(ProxyActions.EXTRA_BYPASS_RULES, cfg.bypassRules)
+                putExtra(ProxyActions.EXTRA_IS_VK_XRAY, true)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            ProxyServiceState.setWireGuardUp(true)
+            val displayPort = cfg.localPort.substringAfterLast(":")
+            ProxyServiceState.addLog("VK-Xray: туннель VLESS запущен через 127.0.0.1:$displayPort")
+            notifier.setStatus(context.getString(R.string.tunnel_active), active = true)
+        } catch (e: Exception) {
+            ProxyServiceState.addLog("VK-Xray: ошибка запуска - ${e.message}")
+            ProxyServiceState.setWireGuardUp(false)
+            notifier.setStatus(context.getString(R.string.notif_proxy_wireguard_error))
+        }
+    }
+
+    private fun stopXrayTunnel() {
+        try {
+            val intent = Intent(context, RealityVpnService::class.java).apply {
+                action = ProxyActions.STOP
+            }
+            context.startService(intent)
+            ProxyServiceState.setWireGuardUp(false)
+        } catch (e: Exception) {
+            ProxyServiceState.addLog("VK-Xray: ошибка остановки - ${e.message}")
         }
     }
 
@@ -183,6 +244,7 @@ class CoreProcessController(
     fun destroyProcessAndTunnel() {
         val proc = process.get()
         val wg = wireGuard
+        stopXrayTunnel()
         Thread {
             try {
                 // SIGTERM, не SIGKILL: ядро успевает отдать TURN-аллокации релею
@@ -236,7 +298,13 @@ class CoreProcessController(
         if (cfg.isRawMode) {
             val parts = cfg.rawCommand.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }
             cmdArgs.add(executable)
-            cmdArgs.addAll(parts.drop(1))
+            val rawArgs = parts.drop(1)
+            val effectiveArgs = if (cfg.tunnelTransport == TunnelTransport.VK_XRAY) {
+                CoreArgs.adaptRawArgsForVkXray(rawArgs)
+            } else {
+                rawArgs
+            }
+            cmdArgs.addAll(effectiveArgs)
         } else {
             cmdArgs.add(executable)
             val carrierDnsValue = if (cfg.useCarrierDns) carrierDns() else null
@@ -251,7 +319,7 @@ class CoreProcessController(
 
         val tracker = CoreConnectionTracker(
             udpTotal = if (cfg.isRawMode) 0 else if (cfg.threads > 0) cfg.threads else 1,
-            tcpMode = cfg.tcpForward
+            tcpMode = cfg.tcpForward || cfg.tunnelTransport == TunnelTransport.VK_XRAY
         )
 
         fun publishStats() {
@@ -335,19 +403,35 @@ class CoreProcessController(
                                 ProxyServiceState.setStartupResult(StartupResult.Success)
                                 ProxyServiceState.markConnectedIfAbsent(SystemClock.elapsedRealtime())
                                 notifier.setStatus(context.getString(R.string.proxy_active), active = true)
-                                if (cfg.wireGuardActive && wgWanted.get()) {
-                                    scope.launch {
-                                        ProxyServiceState.addLog(
-                                            "WireGuard: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
-                                        )
-                                        delay(WIREGUARD_START_DELAY_MS)
-                                        if (userStopped.get() || process.get() !== proc) {
+                                if (wgWanted.get()) {
+                                    if (cfg.wireGuardActive || cfg.amneziaActive) {
+                                        scope.launch {
                                             ProxyServiceState.addLog(
-                                                "WireGuard: старт отменён, прокси останавливается"
+                                                "WireGuard: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
                                             )
-                                            return@launch
+                                            delay(WIREGUARD_START_DELAY_MS)
+                                            if (userStopped.get() || process.get() !== proc) {
+                                                ProxyServiceState.addLog(
+                                                    "WireGuard: старт отменён, прокси останавливается"
+                                                )
+                                                return@launch
+                                            }
+                                            startWireGuard(cfg)
                                         }
-                                        startWireGuard(cfg)
+                                    } else if (cfg.vkXrayActive) {
+                                        scope.launch {
+                                            ProxyServiceState.addLog(
+                                                "VK-Xray: подъём через ${WIREGUARD_START_DELAY_MS} мс после старта TURN-туннеля"
+                                            )
+                                            delay(WIREGUARD_START_DELAY_MS)
+                                            if (userStopped.get() || process.get() !== proc) {
+                                                ProxyServiceState.addLog(
+                                                    "VK-Xray: старт отменён, прокси останавливается"
+                                                )
+                                                return@launch
+                                            }
+                                            startXrayTunnel(cfg)
+                                        }
                                     }
                                 }
                                 startupEmitted = true
@@ -399,6 +483,7 @@ class CoreProcessController(
             // Читаем состояние, а не локальный флаг: WG могли поднять кнопкой уже
             // после старта сессии.
             if (ProxyServiceState.wireGuardUp.value) {
+                stopXrayTunnel()
                 wireGuard.stop()
                 ProxyServiceState.setWireGuardUp(false)
             }

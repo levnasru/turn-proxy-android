@@ -146,6 +146,9 @@ class UnixSocketProtector(private val context: Context) {
                 } else {
                     Log.w("UnixSocketProtector", "No ancillary FDs received")
                 }
+                val output = socket.outputStream
+                output.write(byteArrayOf(1))
+                output.flush()
             }
         } catch (e: Exception) {
             Log.e("UnixSocketProtector", "Error handling socket", e)

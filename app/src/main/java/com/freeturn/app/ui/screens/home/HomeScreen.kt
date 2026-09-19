@@ -12,11 +12,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.freeturn.app.data.config.ClientConfig
+import com.freeturn.app.data.config.TunnelTransport
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -130,9 +134,8 @@ fun HomeScreen(
     }
 
     fun startProxyWithTunnel() {
-        // RealityVpnService - тоже VpnService (см. AndroidProxyServiceLauncher) и без
-        // предварительного prepare() establish() в нём молча возвращает null.
-        if (clientConfig.wireGuardActive || clientConfig.realityActive) {
+        // RealityVpnService, WireGuardTunnelManager и VK-Xray - VpnService и требуют предварительного prepare()
+        if (clientConfig.anyTunnelActive) {
             withVpnPermission { proxyViewModel.startProxy() }
             return
         }
@@ -216,8 +219,9 @@ fun HomeScreen(
                                 }
                             }
                         },
-                        wireGuardConfigured = clientConfig.wireGuardActive,
+                        wireGuardConfigured = clientConfig.wireGuardActive || clientConfig.amneziaActive || clientConfig.vkXrayActive,
                         wireGuardUp = wireGuardUp,
+                        tunnelTransport = clientConfig.tunnelTransport,
                         onToggleWireGuard = { enable ->
                             HapticUtil.perform(
                                 context,
@@ -228,12 +232,51 @@ fun HomeScreen(
                         },
                         onInjectCache = { showInjectCacheDialog.value = true }
                     )
+
+                    Spacer(Modifier.height(Spacing.sm))
+
+                    QuickProtocolBar(
+                        currentTransport = clientConfig.tunnelTransport,
+                        onSelectTransport = { newMode ->
+                            HapticUtil.perform(context, HapticUtil.Pattern.CLICK)
+                            val activeId = serversSnapshot.activeId
+                            fun updateActive(transform: (ClientConfig) -> ClientConfig) {
+                                if (activeId != null) {
+                                    settingsViewModel.updateServerClient(activeId, transform)
+                                } else {
+                                    settingsViewModel.saveClientConfig(transform(clientConfig), null)
+                                }
+                            }
+                            if (newMode == TunnelTransport.REALITY) {
+                                if (clientConfig.realityActive) {
+                                    updateActive { it.copy(tunnelTransport = TunnelTransport.REALITY) }
+                                } else {
+                                    settingsViewModel.switchToReality()
+                                }
+                            } else {
+                                if (clientConfig.tunnelTransport == TunnelTransport.REALITY) {
+                                    val vkServer = serversSnapshot.list.firstOrNull { it.client.tunnelTransport != TunnelTransport.REALITY }
+                                    if (vkServer != null) {
+                                        settingsViewModel.applyServer(vkServer.id)
+                                        settingsViewModel.updateServerClient(vkServer.id) {
+                                            it.copy(tunnelTransport = newMode)
+                                        }
+                                    } else {
+                                        updateActive { it.copy(tunnelTransport = newMode) }
+                                    }
+                                } else {
+                                    updateActive { it.copy(tunnelTransport = newMode) }
+                                }
+                            }
+                        },
+                        enabled = proxyState is ProxyState.Idle || proxyState is ProxyState.Error
+                    )
                 }
 
-                // Индикатор split-tunneling (только для WG).
-                if (clientConfig.wireGuardActive) {
+                // Индикатор split-tunneling (для любого активного туннеля).
+                if (clientConfig.anyTunnelActive) {
                     SplitTunnelChip(
-                        splitActive = clientConfig.splitTunnelMode != SplitTunnelMode.ALL,
+                        splitActive = clientConfig.splitTunnelMode != SplitTunnelMode.ALL || clientConfig.bypassRules.isNotBlank(),
                         onClick = {
                             HapticUtil.perform(context, HapticUtil.Pattern.CLICK)
                             showSplitSheet.value = true
@@ -251,9 +294,11 @@ fun HomeScreen(
         SplitTunnelModal(
             mode = clientConfig.splitTunnelMode,
             apps = clientConfig.splitTunnelApps,
+            bypassRules = clientConfig.bypassRules,
             locked = wireGuardUp,
             onModeChange = settingsViewModel::setSplitTunnelMode,
             onAppsChange = settingsViewModel::setSplitTunnelApps,
+            onBypassRulesChange = settingsViewModel::setBypassRules,
             onDismiss = { showSplitSheet.value = false },
             containerColor = sheetColor
         )

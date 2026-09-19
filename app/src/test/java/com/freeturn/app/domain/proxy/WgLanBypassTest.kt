@@ -83,4 +83,83 @@ class WgLanBypassTest {
         assertCovered(result, "10.13.13.1", "10.13.13.14", "8.8.8.8")
         assertNotCovered(result, "10.0.0.1", "10.13.12.1", "10.13.14.1", "192.168.1.1")
     }
+
+    @Test
+    fun `extractTunnelSubnet finds ipv4 in dual stack configuration`() {
+        val conf = """
+            [Interface]
+            Address = fd00::2/64, 10.13.13.2/32
+            PrivateKey = aaaaaa
+        """.trimIndent()
+        assertEquals("10.13.13.0/24", conf.extractTunnelSubnet())
+    }
+
+    @Test
+    fun `test portal config parsing and userspace string`() {
+        val raw = """
+            [Interface]
+            PrivateKey = iJlfuhNdG4Ul/5TZ9vEHr7HKbLDYGlKt36D/7VRRw2Q=
+            Address = 10.13.13.14/32, fd00:9::14/128
+            DNS = 1.1.1.1
+            MTU = 1050
+
+            [Peer]
+            PublicKey = aVt1fPF9nwraL8IuhR1VXleGbrq271uwkCs7GuSL7j0=
+            AllowedIPs = 0.0.0.0/2, 64.0.0.0/4, 80.0.0.0/5, 88.0.0.0/7, 90.0.0.0/9, 90.128.0.0/12, 90.144.0.0/13, 90.152.0.0/14, 90.157.0.0/16, 90.158.0.0/15, 90.160.0.0/11, 90.192.0.0/10, 91.0.0.0/8, 92.0.0.0/7, 94.0.0.0/8, 95.0.0.0/9, 95.128.0.0/11, 95.160.0.0/15, 95.162.0.0/16, 95.164.0.0/14, 95.168.0.0/13, 95.176.0.0/12, 95.192.0.0/10, 96.0.0.0/3, 128.0.0.0/1, ::/0
+            Endpoint = 127.0.0.1:9000
+            PersistentKeepalive = 25
+        """.trimIndent()
+
+        val parsed = com.wireguard.config.Config.parse(java.io.ByteArrayInputStream(raw.toByteArray()))
+        val uStr = parsed.toWgUserspaceString()
+        println("USERSPACE_CONFIG:\n$uStr")
+        val qStr = parsed.toWgQuickString()
+        println("QUICK_CONFIG:\n$qStr")
+
+        val allowedIps = "0.0.0.0/2, 64.0.0.0/4, 80.0.0.0/5, 88.0.0.0/7, 90.0.0.0/9, 90.128.0.0/12, 90.144.0.0/13, 90.152.0.0/14, 90.157.0.0/16, 90.158.0.0/15, 90.160.0.0/11, 90.192.0.0/10, 91.0.0.0/8, 92.0.0.0/7, 94.0.0.0/8, 95.0.0.0/9, 95.128.0.0/11, 95.160.0.0/15, 95.162.0.0/16, 95.164.0.0/14, 95.168.0.0/13, 95.176.0.0/12, 95.192.0.0/10, 96.0.0.0/3, 128.0.0.0/1, ::/0"
+        val lanBypassed = excludeLanFromAllowedIps(allowedIps, keepSubnet = "10.13.13.0/24")
+        println("LAN_BYPASSED_ALLOWED_IPS:\n$lanBypassed")
+    }
+
+    @Test
+    fun `stripAmneziaHeaders strips all AWG headers and junk parameters allowing vanilla Config parse`() {
+        val awgConfig = """
+            [Interface]
+            Address = 10.13.13.2/32
+            PrivateKey = iJlfuhNdG4Ul/5TZ9vEHr7HKbLDYGlKt36D/7VRRw2Q=
+            DNS = 1.1.1.1
+            Jc = 4
+            Jmin = 50
+            Jmax = 1000
+            S1 = 15
+            S2 = 30
+            H1 = 1
+            H2 = 2
+            H3 = 3
+            H4 = 4
+
+            [Peer]
+            PublicKey = aVt1fPF9nwraL8IuhR1VXleGbrq271uwkCs7GuSL7j0=
+            Endpoint = 127.0.0.1:9000
+            AllowedIPs = 0.0.0.0/0
+        """.trimIndent()
+
+        val stripped = awgConfig.stripAmneziaHeaders()
+        assertFalse(stripped.contains("Jc ="))
+        assertFalse(stripped.contains("Jmin ="))
+        assertFalse(stripped.contains("Jmax ="))
+        assertFalse(stripped.contains("S1 ="))
+        assertFalse(stripped.contains("S2 ="))
+        assertFalse(stripped.contains("H1 ="))
+        assertFalse(stripped.contains("H2 ="))
+        assertFalse(stripped.contains("H3 ="))
+        assertFalse(stripped.contains("H4 ="))
+        assertTrue(stripped.contains("Address = 10.13.13.2/32"))
+        assertTrue(stripped.contains("Endpoint = 127.0.0.1:9000"))
+
+        val parsed = com.wireguard.config.Config.parse(
+            java.io.ByteArrayInputStream(stripped.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        )
+        assertEquals("10.13.13.2/32", parsed.`interface`.addresses.first().toString())
+    }
 }

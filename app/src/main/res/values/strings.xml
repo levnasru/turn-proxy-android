@@ -373,6 +373,8 @@
     <string name="tile_service_label">Free Turn</string>
     <string name="wg_button_on">WireGuard включён</string>
     <string name="wg_button_off">WireGuard выключен</string>
+    <string name="tunnel_button_on">%s включён</string>
+    <string name="tunnel_button_off">%s выключен</string>
 
     <!-- Виджет домашнего экрана -->
     <string name="widget_label">FreeTurn - прокси</string>
@@ -403,6 +405,18 @@
     <string name="split_tunnel_locked">Остановите подключение, чтобы изменить раздельное туннелирование</string>
     <string name="split_tunnel_status_off">Раздельное туннелирование выключено</string>
     <string name="split_tunnel_status_on">Раздельное туннелирование включено</string>
+    <string name="split_tunnel_tab_apps">Приложения</string>
+    <string name="split_tunnel_tab_sites">Сайты и IP</string>
+    <string name="bypass_rules_title">Обход туннеля (Whitelist)</string>
+    <string name="bypass_rules_hint">Трафик к этим доменам и IP идёт напрямую, минуя VPN</string>
+    <string name="bypass_rules_input_placeholder">Домен или IP (kinopoisk.ru, 1.2.3.4)</string>
+    <string name="bypass_rules_add">Добавить</string>
+    <string name="bypass_rules_empty">Список пуст. Добавьте свои домены/IP или стандартные сервисы РФ.</string>
+    <string name="bypass_rules_add_defaults">Сервисы РФ</string>
+    <string name="bypass_rules_clear">Очистить</string>
+    <string name="bypass_rules_item_delete">Удалить</string>
+    <string name="bypass_rules_type_domain">Домен</string>
+    <string name="bypass_rules_type_ip">IP / Подсеть</string>
 
     <!-- Servers sheet -->
     <string name="servers_sheet_title">Серверы</string>
@@ -503,11 +517,23 @@
     <string name="connection_mode_title">Режим подключения</string>
     <string name="provider_connection_mode_desc">Proxy или VPN (WireGuard), импорт конфига</string>
     <string name="mode_proxy">Прокси</string>
-    <string name="mode_vpn">VPN</string>
+    <string name="mode_vpn">VPN (WG)</string>
+    <string name="mode_vk_xray">VK · Xray</string>
+    <string name="mode_awg">AWG</string>
     <string name="mode_reality">Reality</string>
     <string name="mode_proxy_desc">Трафик идёт через локальный прокси, без туннеля.</string>
     <string name="mode_vpn_desc">Весь трафик устройства туннелируется через WireGuard.</string>
+    <string name="mode_vk_xray_desc">Туннелирование VLESS через TCP-порт :56003 VK-TURN. Без сигнатур WireGuard, обходит блокировки ТСПУ.</string>
+    <string name="mode_awg_desc">Обфусцированный WireGuard (AmneziaWG) с защитой заголовков от DPI.</string>
     <string name="mode_reality_desc">Прямое VLESS+Reality-подключение (как в отдельном v2ray/Xray) — без нашего TURN-транспорта, весь трафик через отдельный VPN-туннель.</string>
+    <string name="protocol_bar_wg">VK · WG</string>
+    <string name="protocol_bar_wg_desc">Низкий пинг (UDP)</string>
+    <string name="protocol_bar_vk_xray">VK · Xray</string>
+    <string name="protocol_bar_vk_xray_desc">Анти-DPI / TCP</string>
+    <string name="protocol_bar_awg">AWG</string>
+    <string name="protocol_bar_awg_desc">Маскировка WG</string>
+    <string name="protocol_bar_reality">Reality</string>
+    <string name="protocol_bar_reality_desc">Прямой VLESS</string>
     <string name="load_wg_conf">Загрузить из файла</string>
     <string name="load_xray_json">Загрузить из файла</string>
     <string name="setup_xray_json_label">Конфиг Xray-core (JSON)</string>

@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.8.0](https://github.com/levnasru/turn-proxy-android/compare/v3.7.0...v3.8.0) (2026-09-19)
+
+
+### Features
+
+* multi-protocol switcher on home screen: VK · WG, VK · Xray, AWG, Reality
+* dynamic protocol name in tunnel hero toggle button
+* VK-Xray anti-DPI mode: VLESS tunnel over port :56003 with max 20 stream limit for optimal TCP performance
+* full support for LibXray API v3 (v26.9.9) across VpnService and subscription management
+* fix loopback packet routing to avoid martian drops in local VLESS transport
+
+
 ## [3.7.0](https://github.com/levnasru/turn-proxy-android/compare/v3.6.6...v3.7.0) (2026-09-19)
 
 

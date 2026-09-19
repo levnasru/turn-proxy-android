@@ -37,10 +37,13 @@ class RealityStateBridge(private val context: Context) {
         }
     )
 
+    private var serviceMessenger: Messenger? = null
+
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             bound = true
             val messenger = Messenger(binder)
+            serviceMessenger = messenger
             val register = Message.obtain(null, RealityIpc.MSG_REGISTER_CLIENT).apply {
                 replyTo = clientMessenger
             }
@@ -55,6 +58,7 @@ class RealityStateBridge(private val context: Context) {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             bound = false
+            serviceMessenger = null
             // Процесс :reality умер не по штатному teardown - не оставлять UI
             // подвисшим на "подключено", когда сервиса на деле уже нет.
             ProxyServiceState.setRunning(false)
@@ -71,6 +75,13 @@ class RealityStateBridge(private val context: Context) {
 
     fun unbind() {
         if (!bound) return
+        serviceMessenger?.let { messenger ->
+            val unregister = Message.obtain(null, RealityIpc.MSG_UNREGISTER_CLIENT).apply {
+                replyTo = clientMessenger
+            }
+            runCatching { messenger.send(unregister) }
+        }
+        serviceMessenger = null
         runCatching { context.unbindService(connection) }
         bound = false
     }

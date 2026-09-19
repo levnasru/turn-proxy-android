@@ -15,6 +15,8 @@ object RealityIpc {
     const val MSG_STATE_UPDATE = 2
     /** Сервис -> клиент: одна строка лога. */
     const val MSG_LOG_LINE = 3
+    /** Клиент -> сервис: отписка, Message.replyTo несёт обратный Messenger. */
+    const val MSG_UNREGISTER_CLIENT = 4
 }
 
 data class RealityState(

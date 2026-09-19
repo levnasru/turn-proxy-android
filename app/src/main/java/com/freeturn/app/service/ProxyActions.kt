@@ -13,4 +13,6 @@ object ProxyActions {
      * перечитывается сервисом из DataStore, т.к. :reality может закэшировать процесс
      * между сессиями (см. AndroidProxyServiceLauncher.start()). */
     const val EXTRA_XRAY_CONFIG = "xray_config"
+    const val EXTRA_BYPASS_RULES = "bypass_rules"
+    const val EXTRA_IS_VK_XRAY = "is_vk_xray"
 }

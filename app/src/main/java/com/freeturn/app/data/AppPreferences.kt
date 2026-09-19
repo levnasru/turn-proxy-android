@@ -49,6 +49,10 @@ class AppPreferences(context: Context) {
         val SUBSCRIPTIONS_JSON = stringPreferencesKey("subscriptions_json")
         val OWN_CLIENT_ID = stringPreferencesKey("own_client_id")
         val HOTSPOT_PROXY_ENABLED = booleanPreferencesKey("hotspot_proxy_enabled")
+        val PORTAL_USERNAME = stringPreferencesKey("portal_username")
+        val PORTAL_PASSWORD = stringPreferencesKey("portal_password")
+        val PORTAL_TOKEN = stringPreferencesKey("portal_token")
+        val PORTAL_CONFIG_ETAG = stringPreferencesKey("portal_config_etag")
     }
 
     private fun <T> prefFlow(transform: (Preferences) -> T): Flow<T> =
@@ -106,6 +110,32 @@ class AppPreferences(context: Context) {
     val batteryPromptShownFlow: Flow<Boolean> = prefFlow { prefs -> prefs[BATTERY_PROMPT_SHOWN] ?: false }
 
     val hotspotProxyEnabledFlow: Flow<Boolean> = prefFlow { prefs -> prefs[HOTSPOT_PROXY_ENABLED] ?: false }
+
+    val portalUsernameFlow: Flow<String?> = prefFlow { it[PORTAL_USERNAME] }
+    val portalPasswordFlow: Flow<String?> = prefFlow { it[PORTAL_PASSWORD] }
+    val portalTokenFlow: Flow<String?> = prefFlow { it[PORTAL_TOKEN] }
+    val portalEtagFlow: Flow<String?> = prefFlow { it[PORTAL_CONFIG_ETAG] }
+
+    suspend fun savePortalAuth(username: String, password: String, token: String, etag: String? = null) {
+        context.dataStore.edit { prefs ->
+            prefs[PORTAL_USERNAME] = username
+            prefs[PORTAL_PASSWORD] = password
+            prefs[PORTAL_TOKEN] = token
+            if (etag != null) prefs[PORTAL_CONFIG_ETAG] = etag
+        }
+    }
+
+    suspend fun updatePortalToken(token: String) {
+        context.dataStore.edit { prefs ->
+            prefs[PORTAL_TOKEN] = token
+        }
+    }
+
+    suspend fun updatePortalEtag(etag: String) {
+        context.dataStore.edit { prefs ->
+            prefs[PORTAL_CONFIG_ETAG] = etag
+        }
+    }
 
     // Каждая операция - одна транзакция dataStore.edit: атомарный read-modify-write,
     // параллельные записи не теряются и не оставляют активный id без сервера.

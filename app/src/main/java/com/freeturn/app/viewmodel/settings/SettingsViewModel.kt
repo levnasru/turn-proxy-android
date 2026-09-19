@@ -17,6 +17,7 @@ import com.freeturn.app.data.server.ServersSnapshot
 import com.freeturn.app.data.server.Subscription
 import com.freeturn.app.domain.subscription.XraySubscriptionFetcher
 import com.freeturn.app.domain.portal.PortalApiClient
+import com.freeturn.app.domain.portal.ConfigFetchResult
 import com.freeturn.app.domain.backup.BackupManager
 import com.freeturn.app.domain.update.AppUpdater
 import com.freeturn.app.domain.proxy.LocalProxyManager
@@ -192,6 +193,15 @@ class SettingsViewModel(
         }
     }
 
+    fun setBypassRules(value: String) {
+        viewModelScope.launch {
+            val trimmed = value.trim()
+            prefs.updateActiveServer {
+                it.copy(client = it.client.copy(bypassRules = trimmed))
+            }
+        }
+    }
+
     // Ручной сервер создаётся неактивным и с sync OFF, чтобы его можно было донастроить без SSH.
     fun addManualServer(name: String, onAdded: (String) -> Unit) {
         viewModelScope.launch {
@@ -249,7 +259,14 @@ class SettingsViewModel(
             _portalLoginState.value = PortalLoginState.Running
             _portalLoginState.value = try {
                 val token = portalApi.login(username, password)
-                val cfg = portalApi.fetchConfig(token)
+                val fetchRes = portalApi.fetchConfigWithEtag(token)
+                val (cfg, etag) = when (fetchRes) {
+                    is ConfigFetchResult.Success -> fetchRes.config to fetchRes.etag
+                    is ConfigFetchResult.Error -> throw IOException(fetchRes.message)
+                    is ConfigFetchResult.Unauthorized -> throw IOException(fetchRes.message)
+                    is ConfigFetchResult.NotModified -> throw IOException("unexpected 304 on first login")
+                }
+                prefs.savePortalAuth(username, password, token, etag)
                 val wgConf = cfg.wgConfig.trim()
                 val hasWg = wgConf.isNotEmpty()
                 val server = Server(
@@ -261,10 +278,6 @@ class SettingsViewModel(
                         hubPin = cfg.hubPin,
                         hubToken = cfg.hubToken,
                         threads = cfg.streams.takeIf { it > 0 } ?: ClientConfig.DEFAULT_THREADS,
-                        // WireGuard рвётся к -listen UDP-релеем (-mode udp, дефолт core):
-                        // tcp+bond превращает -listen в TCP-сокет, и WG-пакеты идут в
-                        // никуда (down=0 bit/s при живом хендшейке). tcp+bond годится
-                        // только без WG-слоя сверху.
                         tcpForward = !hasWg,
                         bond = !hasWg,
                         tunnelTransport = if (hasWg) TunnelTransport.WIREGUARD
@@ -277,11 +290,140 @@ class SettingsViewModel(
                     )
                 )
                 prefs.addServer(server, activate = true)
+                if (!cfg.xraySubscriptionUrl.isNullOrBlank()) {
+                    try {
+                        syncXraySubscription(cfg.xraySubscriptionUrl, prefs, subscriptionFetcher)
+                    } catch (_: Exception) {}
+                }
                 PortalLoginState.Done(server.name)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 PortalLoginState.Error(e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    /**
+     * Активирует режим Reality:
+     * 1. Если уже есть сервер с заполненным xrayConfig - переключается на него.
+     * 2. Если нет - подтягивает ноды из подписки (или дефолтной семейной Reality-подписки),
+     *    создаёт узел и сразу делает его активным, исключая ошибку "Не задан Xray-конфиг".
+     */
+    fun switchToReality() {
+        viewModelScope.launch {
+            val servers = prefs.serversSnapshot.first().list
+            val existingReality = servers.firstOrNull {
+                it.client.tunnelTransport == TunnelTransport.REALITY && it.client.xrayConfig.isNotBlank()
+            } ?: servers.firstOrNull { it.client.xrayConfig.isNotBlank() }
+
+            if (existingReality != null) {
+                applyServer(existingReality.id)
+                updateServerClient(existingReality.id) {
+                    it.copy(tunnelTransport = TunnelTransport.REALITY)
+                }
+                return@launch
+            }
+
+            _subscriptionSyncState.value = SubscriptionSyncState.Running
+            try {
+                val subs = prefs.subscriptionsSnapshot.first()
+                val sub = subs.firstOrNull() ?: run {
+                    val defaultUrl = "https://panelproxy.levnas.ru:2096/sub/sk6crmdv007x73p4"
+                    val id = prefs.addSubscription(Subscription(name = "Reality", url = defaultUrl))
+                    Subscription(id = id, name = "Reality", url = defaultUrl)
+                }
+                val nodes = subscriptionFetcher.fetch(sub.url)
+                if (nodes.isNotEmpty()) {
+                    val res = prefs.syncSubscriptionServers(sub.id, nodes)
+                    _subscriptionSyncState.value = SubscriptionSyncState.Done(res.added, res.updated, res.removed)
+                    val updatedServers = prefs.serversSnapshot.first().list
+                    val newReality = updatedServers.firstOrNull { it.subscriptionId == sub.id }
+                        ?: updatedServers.firstOrNull { it.client.xrayConfig.isNotBlank() }
+                    if (newReality != null) {
+                        applyServer(newReality.id)
+                    }
+                } else {
+                    _subscriptionSyncState.value = SubscriptionSyncState.Error("Подписка не вернула узлов")
+                }
+            } catch (e: Exception) {
+                _subscriptionSyncState.value = SubscriptionSyncState.Error(e.message ?: "Ошибка загрузки Reality")
+            }
+        }
+    }
+
+    fun syncPortalConfig() {
+        viewModelScope.launch {
+            syncPortalConfigSilently(portalApi, prefs, subscriptionFetcher)
+        }
+    }
+
+    companion object {
+        suspend fun syncXraySubscription(
+            subUrl: String,
+            prefs: AppPreferences,
+            subscriptionFetcher: XraySubscriptionFetcher
+        ) {
+            val existingSubs = prefs.subscriptionsSnapshot.first()
+            val existing = existingSubs.firstOrNull { it.url == subUrl }
+            val subId = existing?.id ?: prefs.addSubscription(
+                Subscription(name = "Portal Reality", url = subUrl)
+            )
+            val nodes = subscriptionFetcher.fetch(subUrl)
+            if (nodes.isNotEmpty()) {
+                prefs.syncSubscriptionServers(subId, nodes)
+            }
+        }
+
+        suspend fun syncPortalConfigSilently(
+            portalApi: PortalApiClient,
+            prefs: AppPreferences,
+            subscriptionFetcher: XraySubscriptionFetcher
+        ) {
+            var token = prefs.portalTokenFlow.first() ?: return
+            val etag = prefs.portalEtagFlow.first()
+            var fetchRes = portalApi.fetchConfigWithEtag(token, etag)
+            if (fetchRes is ConfigFetchResult.Unauthorized) {
+                val user = prefs.portalUsernameFlow.first()
+                val pass = prefs.portalPasswordFlow.first()
+                if (!user.isNullOrBlank() && !pass.isNullOrBlank()) {
+                    try {
+                        token = portalApi.login(user, pass)
+                        prefs.updatePortalToken(token)
+                        fetchRes = portalApi.fetchConfigWithEtag(token, etag)
+                    } catch (_: Exception) {
+                        return
+                    }
+                } else {
+                    return
+                }
+            }
+            if (fetchRes is ConfigFetchResult.Success) {
+                val cfg = fetchRes.config
+                fetchRes.etag?.let { prefs.updatePortalEtag(it) }
+                val wgConf = cfg.wgConfig.trim()
+                val hasWg = wgConf.isNotEmpty()
+                prefs.updateActiveServer { srv ->
+                    srv.copy(
+                        client = srv.client.copy(
+                            serverAddress = cfg.peer,
+                            hubUrl = cfg.hubUrls.joinToString(","),
+                            hubPin = cfg.hubPin,
+                            hubToken = cfg.hubToken,
+                            threads = cfg.streams.takeIf { it > 0 } ?: srv.client.threads,
+                            wireGuardConfig = if (hasWg) wgConf else srv.client.wireGuardConfig
+                        ),
+                        opts = srv.opts.copy(
+                            obfProfile = cfg.obfProfile.ifBlank { srv.opts.obfProfile },
+                            obfKey = cfg.obfKey.ifBlank { srv.opts.obfKey }
+                        )
+                    )
+                }
+                if (!cfg.xraySubscriptionUrl.isNullOrBlank()) {
+                    try {
+                        syncXraySubscription(cfg.xraySubscriptionUrl, prefs, subscriptionFetcher)
+                    } catch (_: Exception) {}
+                }
             }
         }
     }

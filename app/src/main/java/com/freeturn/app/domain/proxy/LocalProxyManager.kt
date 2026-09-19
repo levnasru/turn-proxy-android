@@ -13,6 +13,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import com.freeturn.app.data.AppPreferences
+import com.freeturn.app.domain.portal.PortalApiClient
+import com.freeturn.app.domain.subscription.XraySubscriptionFetcher
+import com.freeturn.app.viewmodel.settings.SettingsViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -20,7 +24,12 @@ import kotlinx.coroutines.launch
 /**
  * Управляет жизненным циклом прокси-сервиса (Koin `single`, Application scope).
  */
-class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
+class LocalProxyManager(
+    private val launcher: ProxyServiceLauncher,
+    private val prefs: AppPreferences? = null,
+    private val portalApi: PortalApiClient? = null,
+    private val subscriptionFetcher: XraySubscriptionFetcher? = null
+) {
 
     private val _proxyState = MutableStateFlow<ProxyState>(ProxyState.Idle)
     val proxyState: StateFlow<ProxyState> = _proxyState.asStateFlow()
@@ -154,6 +163,13 @@ class LocalProxyManager(private val launcher: ProxyServiceLauncher) {
         ProxyServiceState.clearConnectedSince()
 
         try {
+            if (prefs != null && portalApi != null && subscriptionFetcher != null) {
+                try {
+                    withTimeoutOrNull(2000L) {
+                        SettingsViewModel.syncPortalConfigSilently(portalApi, prefs, subscriptionFetcher)
+                    }
+                } catch (_: Exception) {}
+            }
             launcher.start()
         } catch (e: Exception) {
             setErrorWithAutoReset(e.message ?: "Не удалось запустить сервис")

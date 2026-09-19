@@ -58,6 +58,7 @@ internal object ServerJson {
             put("xrayConfig", p.client.xrayConfig)
             put("splitTunnelMode", p.client.splitTunnelMode)
             put("splitTunnelApps", p.client.splitTunnelApps)
+            put("bypassRules", p.client.bypassRules)
             put("logsEnabled", p.client.logsEnabled)
             put("clientId", p.client.clientId)
             put("hubUrl", p.client.hubUrl)
@@ -117,6 +118,7 @@ internal object ServerJson {
                     if (it in SplitTunnelMode.VALUES) it else SplitTunnelMode.EXCLUDE
                 },
                 splitTunnelApps = cliO.optString("splitTunnelApps"),
+                bypassRules = cliO.optString("bypassRules"),
                 logsEnabled = cliO.optBoolean("logsEnabled", true),
                 clientId = cliO.optString("clientId"),
                 hubUrl = cliO.optString("hubUrl"),

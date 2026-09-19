@@ -106,7 +106,9 @@ fun ConnectionModeScreen(
                 tunnelTransport = newMode,
                 wireGuardConfig = wgConfig.trim(),
                 wireGuardTunnelName = wgName.trim().ifBlank { TunnelTransport.DEFAULT_TUNNEL_NAME },
-                xrayConfig = xrayConfig.trim()
+                xrayConfig = xrayConfig.trim(),
+                tcpForward = if (newMode == TunnelTransport.WIREGUARD) false else it.tcpForward,
+                bond = if (newMode == TunnelTransport.WIREGUARD) false else it.bond
             )
         }
     }
@@ -194,6 +196,8 @@ fun ConnectionModeScreen(
                 val modes = listOf(
                     TunnelTransport.NONE to R.string.mode_proxy,
                     TunnelTransport.WIREGUARD to R.string.mode_vpn,
+                    TunnelTransport.VK_XRAY to R.string.mode_vk_xray,
+                    TunnelTransport.AMNEZIA to R.string.mode_awg,
                     TunnelTransport.REALITY to R.string.mode_reality,
                 )
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -214,6 +218,8 @@ fun ConnectionModeScreen(
                     stringResource(
                         when (mode) {
                             TunnelTransport.WIREGUARD -> R.string.mode_vpn_desc
+                            TunnelTransport.VK_XRAY -> R.string.mode_vk_xray_desc
+                            TunnelTransport.AMNEZIA -> R.string.mode_awg_desc
                             TunnelTransport.REALITY -> R.string.mode_reality_desc
                             else -> R.string.mode_proxy_desc
                         }
@@ -231,7 +237,7 @@ fun ConnectionModeScreen(
                     )
                 }
 
-                if (mode == TunnelTransport.WIREGUARD) {
+                if (mode == TunnelTransport.WIREGUARD || mode == TunnelTransport.AMNEZIA) {
                     WireGuardConfigCard(
                         wgConfig = wgConfig,
                         onWgConfig = { wgConfig = it; wgDirty = true },
@@ -240,7 +246,9 @@ fun ConnectionModeScreen(
                         privacyMode = privacyMode,
                         onLoadFile = { filePicker.launch("*/*") }
                     )
+                }
 
+                if (mode != TunnelTransport.NONE) {
                     SectionLabel(stringResource(R.string.split_tunnel_title))
                     SettingsCard {
                         SettingsEntryRow(
@@ -262,9 +270,11 @@ fun ConnectionModeScreen(
         SplitTunnelModal(
             mode = saved.splitTunnelMode,
             apps = saved.splitTunnelApps,
+            bypassRules = saved.bypassRules,
             locked = wireGuardUp,
             onModeChange = settingsViewModel::setSplitTunnelMode,
             onAppsChange = settingsViewModel::setSplitTunnelApps,
+            onBypassRulesChange = settingsViewModel::setBypassRules,
             onDismiss = { showSplitSheet = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )

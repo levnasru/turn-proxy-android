@@ -42,6 +42,7 @@ class AndroidProxyServiceLauncher(
             // из DataStore сам (см. RealityVpnService.onStartCommand), поэтому конфиг,
             // прочитанный только что тут, едет интентом.
             intent.putExtra(ProxyActions.EXTRA_XRAY_CONFIG, cfg.xrayConfig)
+            intent.putExtra(ProxyActions.EXTRA_BYPASS_RULES, cfg.bypassRules)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)

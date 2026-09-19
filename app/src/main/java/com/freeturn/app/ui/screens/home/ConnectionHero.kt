@@ -2,6 +2,7 @@
 
 package com.freeturn.app.ui.screens.home
 
+import com.freeturn.app.data.config.TunnelTransport
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -78,6 +79,7 @@ internal fun ConnectionHero(
     modifier: Modifier = Modifier,
     wireGuardConfigured: Boolean = false,
     wireGuardUp: Boolean = false,
+    tunnelTransport: String = TunnelTransport.WIREGUARD,
     onToggleWireGuard: (Boolean) -> Unit = {},
     onInjectCache: () -> Unit = {}
 ) {
@@ -112,11 +114,12 @@ internal fun ConnectionHero(
 
         StatsPill(state = state, kind = kind, uptimeText = uptimeText)
 
-        // Кнопка WG отдельно: гасится и поднимается без пересоздания TURN-сессии.
+        // Кнопка туннеля отдельно: гасится и поднимается без пересоздания TURN-сессии.
         if (wireGuardConfigured) {
             Spacer(Modifier.height(8.dp))
             WireGuardButton(
                 up = wireGuardUp,
+                transport = tunnelTransport,
                 enabled = kind == HeroKind.Running || kind == HeroKind.Busy,
                 onClick = { onToggleWireGuard(!wireGuardUp) }
             )
@@ -125,9 +128,20 @@ internal fun ConnectionHero(
 }
 
 @Composable
-private fun WireGuardButton(up: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun WireGuardButton(
+    up: Boolean,
+    transport: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
     val extended = MaterialTheme.extendedColorScheme
-    val label = stringResource(if (up) R.string.wg_button_on else R.string.wg_button_off)
+    val protocolName = when (transport) {
+        TunnelTransport.VK_XRAY -> stringResource(R.string.protocol_bar_vk_xray)
+        TunnelTransport.AMNEZIA -> stringResource(R.string.protocol_bar_awg)
+        TunnelTransport.REALITY -> stringResource(R.string.protocol_bar_reality)
+        else -> stringResource(R.string.protocol_bar_wg)
+    }
+    val label = stringResource(if (up) R.string.tunnel_button_on else R.string.tunnel_button_off, protocolName)
     val container by animateColorAsState(
         targetValue = when {
             !enabled -> MaterialTheme.colorScheme.surfaceContainerHigh

@@ -36,6 +36,11 @@ data class ClientConfig(
      * Пустой в exclude-режиме = дефолтный список рос-сервисов (см. [splitTunnelSelection]).
      */
     val splitTunnelApps: String = "",
+    /**
+     * Пользовательские правила обхода (домены и IP/подсети, разделенные переносом строки или запятой).
+     * Трафик к ним идет напрямую мимо туннеля (WireGuard AllowedIPs exclusion / Xray direct routing).
+     */
+    val bypassRules: String = "",
     val logsEnabled: Boolean = true,
     val clientId: String = "",
     /** `-hub-url`: один или несколько эндпоинтов через запятую (аккаунт на эндпоинт). */
@@ -50,8 +55,17 @@ data class ClientConfig(
     val wireGuardActive: Boolean
         get() = tunnelTransport == TunnelTransport.WIREGUARD && wireGuardConfig.isNotBlank()
 
+    val vkXrayActive: Boolean
+        get() = tunnelTransport == TunnelTransport.VK_XRAY
+
+    val amneziaActive: Boolean
+        get() = tunnelTransport == TunnelTransport.AMNEZIA && wireGuardConfig.isNotBlank()
+
     val realityActive: Boolean
         get() = tunnelTransport == TunnelTransport.REALITY && xrayConfig.isNotBlank()
+
+    val anyTunnelActive: Boolean
+        get() = wireGuardActive || vkXrayActive || amneziaActive || realityActive
 
     val hubMode: Boolean get() = provider == Provider.HUB
 
@@ -59,10 +73,9 @@ data class ClientConfig(
         const val DEFAULT_LOCAL_PORT = "127.0.0.1:9000"
         const val DEFAULT_THREADS = 12
         const val DEFAULT_STREAMS_PER_CRED = 12
-        // Не настройка, а константа транспорта: WG идёт поверх TURN+обфускации+reseq.
-        // Суммарный оверхед на IPv6 (40 IP + 8 UDP + 4 STUN + 62 rtpvideo + 8 reseq + 32 WG) = 154 байта.
-        // Чтобы внешний UDP-пакет гарантированно не превышал 1280 (минимум IPv6 / сотовый MTU 1300),
-        // внутренний WG MTU = 1120 (1120 + 154 = 1274 <= 1280).
-        const val WG_MTU = 1120
+        // Не настройка, а константа транспорта: WG идёт поверх TURN+DTLS+обфускации+reseq.
+        // Оверхед включает 38-байт DTLS (13B заголовок + 9B CID + 16B AEAD tag) + RTP + WireGuard + IPv6.
+        // Внутренний MTU 1050 оставляет достаточный запас, чтобы внешний пакет строго укладывался в IPv6 1280 wire MTU.
+        const val WG_MTU = 1050
     }
 }

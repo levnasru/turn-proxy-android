@@ -26,7 +26,14 @@ class XraySubscriptionFetcher {
     }
 
     private fun fetchBody(url: String): String {
-        val connection = URL(url).openConnection() as HttpURLConnection
+        // Поддомен с валидным Let's Encrypt сертификатом для x-ui панели на порту :2096.
+        // Запрос по голому IP даёт SSLHandshakeException (no alternative certificate subject name).
+        val targetUrl = if (url.contains("89.124.71.77:2096")) {
+            url.replace("89.124.71.77:2096", "panelproxy.levnas.ru:2096")
+        } else {
+            url
+        }
+        val connection = URL(targetUrl).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 15_000
         return try {
@@ -56,7 +63,7 @@ class XraySubscriptionFetcher {
 
     private fun convertLine(line: String): SubscriptionNode? {
         val request = JSONObject().apply {
-            put("apiVersion", 1)
+            put("apiVersion", LibXray.LibXrayAPIVersion)
             put("method", "convertShareLinksToXrayJson")
             put("payload", JSONObject().put("text", line))
         }
