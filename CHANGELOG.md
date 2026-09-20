@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.8.2](https://github.com/levnasru/turn-proxy-android/compare/v3.8.1...v3.8.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* bundle updated FreeTurn core v2.6.1:
+  - fix false resequencer reset on 32-bit sequence wrap-around, eliminating connection drops in long-running sessions
+  - non-blocking socket I/O outside resequencer mutex, unblocking packet ingestion under network backpressure
+  - fix CoDel bufferbloat queue uint32 underflow and time inversion in drop state transitions
+
+
 ## [3.8.1](https://github.com/levnasru/turn-proxy-android/compare/v3.8.0...v3.8.1) (2026-09-19)
 
 
