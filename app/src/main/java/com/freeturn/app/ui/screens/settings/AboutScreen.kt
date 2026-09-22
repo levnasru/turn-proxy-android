@@ -179,8 +179,13 @@ private fun AboutHero(appVersion: String) {
             shape = CircleShape,
             color = MaterialTheme.colorScheme.secondaryContainer
         ) {
+            val displayVersion = if (appVersion.startsWith("LFT-") || appVersion.startsWith("v")) {
+                appVersion
+            } else {
+                "v$appVersion"
+            }
             Text(
-                "v$appVersion",
+                displayVersion,
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs)

@@ -283,7 +283,10 @@ private fun UpdateCard(
     onInstall: () -> Unit
 ) {
     val statusText = when (state) {
-        is UpdateState.Idle -> stringResource(R.string.update_current_version, "v$appVersion")
+        is UpdateState.Idle -> {
+            val v = if (appVersion.startsWith("LFT-") || appVersion.startsWith("v")) appVersion else "v$appVersion"
+            stringResource(R.string.update_current_version, v)
+        }
         is UpdateState.Checking -> stringResource(R.string.update_checking)
         is UpdateState.Available -> stringResource(R.string.update_available, state.version)
         is UpdateState.Downloading -> stringResource(R.string.update_downloading, state.progress)

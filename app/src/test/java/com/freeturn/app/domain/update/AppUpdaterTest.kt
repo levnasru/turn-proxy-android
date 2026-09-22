@@ -15,7 +15,10 @@ class AppUpdaterTest {
 
     @Test
     fun `fork prefix and suffix on local versionName do not break comparison`() {
-        // versionName форка: "levnasru-3.5.2-beta" (и "-debug" в debug-сборке).
+        // versionName: "LFT-3.8.3" (и "-debug" в debug-сборке), legacy: "levnasru-3.5.2-beta".
+        assertTrue(AppUpdater.isNewer("3.8.4", "LFT-3.8.3"))
+        assertFalse(AppUpdater.isNewer("3.8.3", "LFT-3.8.3"))
+        assertFalse(AppUpdater.isNewer("3.8.2", "LFT-3.8.3-debug"))
         assertTrue(AppUpdater.isNewer("3.5.3", "levnasru-3.5.2-beta"))
         assertFalse(AppUpdater.isNewer("3.5.2", "levnasru-3.5.2-beta"))
         assertFalse(AppUpdater.isNewer("3.5.1", "levnasru-3.5.2-beta-debug"))

@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.8.3] (2026-09-22)
+
+### Features
+
+* **reality:** adaptive MTU differentiation for Wi-Fi (1420) vs Cellular (1280).
+* **core:** bundle FreeTurn core v3.8.3 with maxClientSlots=256 support, sequence wrap-around resilience, and zero-allocation buffer drains.
+
+### Bug Fixes
+
+* **process:** use Java 9 reflection and procfs fallback in `ProcessCompat` to guarantee graceful SIGTERM delivery across Android 8–16 without hidden API blockage.
+* **vpn:** reset `tornDown` latch upon service start, unblocking re-connection loops after unexpected disconnects.
+* **ipc:** route broadcast receiver `START` through multi-transport launcher to prevent missing transport initialization.
+* **fd:** unconditionally drain and close ancillary file descriptors in `UnixSocketProtector` to prevent file descriptor table exhaustion.
+* **wireguard:** safely defer `tunnelRef` clearing in `finally` block during tunnel teardown.
+
 ## [3.8.2](https://github.com/levnasru/turn-proxy-android/compare/v3.8.1...v3.8.2) (2026-09-20)
 
 

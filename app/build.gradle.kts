@@ -25,9 +25,9 @@ android {
         // WireGuard GoBackend (com.wireguard.android:tunnel) требует minSdk 24.
         minSdk = 24
         targetSdk = 37
-        versionName = "levnasru-3.8.2" // x-release-please-version
+        versionName = "LFT-3.8.3" // x-release-please-version
         // Производный от versionName (M*10000+m*100+p) - release-please бампит только строку версии.
-        // filter/takeWhile digits: форк добавляет нечисловые префикс ("levnasru-") и суффикс ("-beta").
+        // filter/takeWhile digits: форк добавляет нечисловые префикс ("LFT-") и суффикс ("-beta").
         versionCode = versionName!!.split(".").let { (ma, mi, pa) ->
             ma.filter { it.isDigit() }.toInt() * 10000 +
                 mi.filter { it.isDigit() }.toInt() * 100 +
@@ -69,10 +69,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            resValue("string", "app_name", "FreeTurn Debug")
+            resValue("string", "app_name", "LFT Debug")
         }
         release {
-            resValue("string", "app_name", "FreeTurn")
+            resValue("string", "app_name", "LFT")
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
