@@ -130,34 +130,34 @@ class UnixSocketProtector(private val context: Context) {
             val input = socket.inputStream
             val buffer = ByteArray(1)
             val bytesRead = input.read(buffer)
-            if (bytesRead > 0) {
-                val fds = socket.ancillaryFileDescriptors
-                if (!fds.isNullOrEmpty()) {
-                    for (fd in fds) {
-                        try {
-                            val vpn = getActiveVpnService()
-                            if (vpn != null) {
-                                val pfd = ParcelFileDescriptor.dup(fd)
-                                try {
-                                    val success = vpn.protect(pfd.fd)
-                                    Log.i("UnixSocketProtector", "Protected fd ${pfd.fd}: $success")
-                                } finally {
-                                    try { pfd.close() } catch (_: Exception) {}
-                                }
-                            } else {
-                                Log.w("UnixSocketProtector", "No active VpnService found")
-                            }
-                        } finally {
+            val fds = socket.ancillaryFileDescriptors
+            if (!fds.isNullOrEmpty()) {
+                for (fd in fds) {
+                    try {
+                        val vpn = getActiveVpnService()
+                        if (vpn != null) {
+                            val pfd = ParcelFileDescriptor.dup(fd)
                             try {
-                                Os.close(fd)
-                            } catch (e: Exception) {
-                                Log.w("UnixSocketProtector", "Failed to close ancillary fd", e)
+                                val success = vpn.protect(pfd.fd)
+                                Log.i("UnixSocketProtector", "Protected fd ${pfd.fd}: $success")
+                            } finally {
+                                try { pfd.close() } catch (_: Exception) {}
                             }
+                        } else {
+                            Log.w("UnixSocketProtector", "No active VpnService found")
+                        }
+                    } finally {
+                        try {
+                            Os.close(fd)
+                        } catch (e: Exception) {
+                            Log.w("UnixSocketProtector", "Failed to close ancillary fd", e)
                         }
                     }
-                } else {
-                    Log.w("UnixSocketProtector", "No ancillary FDs received")
                 }
+            } else {
+                Log.w("UnixSocketProtector", "No ancillary FDs received")
+            }
+            if (bytesRead > 0) {
                 val output = socket.outputStream
                 output.write(byteArrayOf(1))
                 output.flush()

@@ -101,12 +101,14 @@ class WireGuardTunnelManager(context: Context) {
 
     private fun stopLocked() {
         ProxyServiceState.setTunnelActive(false)
-        val tunnel = tunnelRef.getAndSet(null) ?: return
+        val tunnel = tunnelRef.get() ?: return
         try {
             backend.setState(tunnel, Tunnel.State.DOWN, null)
             ProxyServiceState.addLog("WireGuard: туннель ${tunnel.name} остановлен")
         } catch (e: Exception) {
             ProxyServiceState.addLog("WireGuard: ошибка остановки ${tunnel.name}: ${e.message}")
+        } finally {
+            tunnelRef.compareAndSet(tunnel, null)
         }
     }
 

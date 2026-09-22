@@ -27,16 +27,33 @@ internal fun Process.stopGracefully(timeoutMs: Long) {
 }
 
 /**
- * В android.jar нет Process.pid() (это Java 9 API), поэтому достаём приватное
- * поле реализации рефлексией. Не получилось - вызывающий шлёт SIGKILL как раньше.
+ * В android.jar нет прямого Process.pid() (Java 9 API), а прямой доступ к приватному
+ * полю "pid" блокируется Hidden API Enforcement на API 28+.
+ * Извлекаем PID через метод pid(), toString() regex и fallback на рефлексию поля.
  */
-private fun Process.childPid(): Int? = try {
-    javaClass.getDeclaredField("pid").let {
-        it.isAccessible = true
-        (it.get(this) as? Number)?.toInt()
+private fun Process.childPid(): Int? {
+    try {
+        val method = javaClass.getMethod("pid")
+        val res = (method.invoke(this) as? Number)?.toInt()
+        if (res != null && res > 0) return res
+    } catch (_: Throwable) {}
+
+    try {
+        val match = Regex("""(?:\[pid=|\bpid=)(\d+)""").find(toString())
+        if (match != null) {
+            val res = match.groupValues[1].toIntOrNull()
+            if (res != null && res > 0) return res
+        }
+    } catch (_: Throwable) {}
+
+    return try {
+        javaClass.getDeclaredField("pid").let {
+            it.isAccessible = true
+            (it.get(this) as? Number)?.toInt()
+        }
+    } catch (_: Throwable) {
+        null
     }
-} catch (_: Exception) {
-    null
 }
 
 private const val SIGTERM = 15

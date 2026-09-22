@@ -151,6 +151,7 @@ class RealityVpnService : VpnService() {
             return START_NOT_STICKY
         }
 
+        tornDown.set(false)
         notifier.prepareConnecting()
         try {
             ServiceCompat.startForeground(this, ProxyNotifier.NOTIF_ID_FG, notifier.build(), fgsType)
@@ -218,15 +219,23 @@ class RealityVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             builder.addRoute("0.0.0.0", 0)
             allExcludedCidrs.forEach { cidr ->
-                val (addr, prefix) = cidr.split("/")
-                runCatching { builder.excludeRoute(IpPrefix(InetAddress.getByName(addr), prefix.toInt())) }
+                runCatching {
+                    val parts = cidr.trim().split("/")
+                    if (parts.size == 2) {
+                        builder.excludeRoute(IpPrefix(InetAddress.getByName(parts[0]), parts[1].toInt()))
+                    }
+                }
             }
         } else {
             // До API 33 excludeRoute() нет - комплемент-список не даёт гарантии
             // отвала на Wi-Fi при промахе, но не хуже прежнего голого 0.0.0.0/0.
-            excludeLanFromAllowedIps("0.0.0.0/0", customExcludedCidrs = parsedBypass.cidrs).split(",").forEach { cidr ->
-                val (addr, prefix) = cidr.trim().split("/")
-                builder.addRoute(addr, prefix.toInt())
+            excludeLanFromAllowedIps("0.0.0.0/0", customExcludedCidrs = parsedBypass.cidrs).split(",").forEach { raw ->
+                runCatching {
+                    val parts = raw.trim().split("/")
+                    if (parts.size == 2) {
+                        builder.addRoute(parts[0], parts[1].toInt())
+                    }
+                }
             }
         }
         // Собственный пакет мимо своего же туннеля - иначе петля (тот же принцип,

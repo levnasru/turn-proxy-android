@@ -18,12 +18,7 @@ class ProxyReceiver : BroadcastReceiver(), KoinComponent {
             ProxyActions.START -> {
                 ProxyServiceState.clearLogs()
                 ProxyServiceState.setStartupResult(null)
-                val serviceIntent = Intent(context, ProxyService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
-                } else {
-                    context.startService(serviceIntent)
-                }
+                launcher.start()
             }
             ProxyActions.STOP -> {
                 launcher.stop()
