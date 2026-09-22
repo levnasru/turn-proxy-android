@@ -2,7 +2,9 @@ package com.freeturn.app.service
 
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.net.IpPrefix
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -172,6 +174,21 @@ class RealityVpnService : VpnService() {
         return START_STICKY
     }
 
+    private fun resolveRealityMtu(): Int {
+        if (isVkXray) {
+            // VK-TURN солянка: держим 1050 для безопасной укладки в DTLS/KCP
+            return ClientConfig.WG_MTU
+        }
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return ClientConfig.REALITY_CELLULAR_MTU
+        val activeNet = cm.activeNetwork ?: return ClientConfig.REALITY_CELLULAR_MTU
+        val caps = cm.getNetworkCapabilities(activeNet) ?: return ClientConfig.REALITY_CELLULAR_MTU
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ClientConfig.REALITY_WIFI_MTU
+            else -> ClientConfig.REALITY_CELLULAR_MTU
+        }
+    }
+
     private suspend fun startXray(xrayConfigOverride: String?, bypassRulesOverride: String? = null) {
         val rawJson = xrayConfigOverride ?: prefs.clientConfigFlow.first().xrayConfig
         if (rawJson.isBlank()) {
@@ -181,9 +198,10 @@ class RealityVpnService : VpnService() {
         val rawBypass = bypassRulesOverride ?: prefs.clientConfigFlow.first().bypassRules
         val parsedBypass = parseBypassRules(rawBypass)
 
+        val mtu = resolveRealityMtu()
         val builder = Builder()
             .setSession(if (isVkXray) "VK-TURN Xray" else "VK-TURN Reality")
-            .setMtu(ClientConfig.WG_MTU)
+            .setMtu(mtu)
             .addAddress("172.19.0.1", 30)
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
@@ -226,7 +244,7 @@ class RealityVpnService : VpnService() {
         val configWithTun = try {
             val stripped = stripDnsGeoDomains(stripExternalGeoRouting(rawJson))
             val withBypass = injectBypassRouting(stripped, parsedBypass)
-            ensureTunInbound(withBypass, pfd.fd)
+            ensureTunInbound(withBypass, pfd.fd, mtu)
         } catch (e: Exception) {
             fail("Xray-конфиг невалиден: ${e.message}")
             return
@@ -288,7 +306,7 @@ class RealityVpnService : VpnService() {
     // fd, дескриптор просто повиснет неиспользованным (proxy/tun/README.md в
     // Xray-core: inbound обязателен). Дописываем такой inbound сами, если его нет -
     // чтобы родной конфиг с ноута можно было вставить без ручной правки JSON.
-    private fun ensureTunInbound(rawJson: String, fd: Int): String {
+    private fun ensureTunInbound(rawJson: String, fd: Int, mtu: Int): String {
         val root = JSONObject(rawJson)
 
         val inbounds = root.optJSONArray("inbounds") ?: org.json.JSONArray().also { root.put("inbounds", it) }
@@ -303,7 +321,7 @@ class RealityVpnService : VpnService() {
                     put(
                         "settings",
                         JSONObject().apply {
-                            put("mtu", ClientConfig.WG_MTU)
+                            put("mtu", mtu)
                             // Пустое name -> xray-core сам генерит имя через net.Interfaces()
                             // (infra/conf/tun.go: GetAvailableTunName), а это netlink-запрос
                             // системных интерфейсов - под Android-песочницей падает permission

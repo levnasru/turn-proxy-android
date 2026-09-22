@@ -77,5 +77,7 @@ data class ClientConfig(
         // Оверхед включает 38-байт DTLS (13B заголовок + 9B CID + 16B AEAD tag) + RTP + WireGuard + IPv6.
         // Внутренний MTU 1050 оставляет достаточный запас, чтобы внешний пакет строго укладывался в IPv6 1280 wire MTU.
         const val WG_MTU = 1050
+        const val REALITY_WIFI_MTU = 1420
+        const val REALITY_CELLULAR_MTU = 1280
     }
 }
