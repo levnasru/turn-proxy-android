@@ -390,6 +390,7 @@ class RealityVpnService : VpnService() {
         stateSink.addLog("Reality: $message")
         stateSink.setStartupResult(StartupResult.Failed(message))
         stateSink.setRunning(false)
+        teardownTunnel()
         stopSelf()
     }
 
@@ -482,6 +483,7 @@ class RealityVpnService : VpnService() {
     override fun onRevoke() {
         // Система/юзер отозвали VPN-разрешение (например, другое приложение
         // перехватило единственный слот VpnService).
+        teardownTunnel()
         stopSelf()
         super.onRevoke()
     }

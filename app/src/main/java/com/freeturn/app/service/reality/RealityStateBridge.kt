@@ -84,6 +84,7 @@ class RealityStateBridge(private val context: Context) {
         serviceMessenger = null
         runCatching { context.unbindService(connection) }
         bound = false
+        ProxyServiceState.markTeardownComplete()
     }
 
     private fun applyState(state: RealityState) {
