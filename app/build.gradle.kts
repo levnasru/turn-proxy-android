@@ -354,7 +354,7 @@ if (coreFetchHook != null) {
 }
 
 abstract class VerifyFreeturnCoreElf : DefaultTask() {
-    @get:InputDirectory
+    @get:Internal
     abstract val jniLibsDir: DirectoryProperty
 
     @TaskAction
@@ -383,6 +383,7 @@ abstract class VerifyFreeturnCoreElf : DefaultTask() {
 val verifyFreeturnCoreElf = tasks.register<VerifyFreeturnCoreElf>("verifyFreeturnCoreElf") {
     description = "Проверяет что jniLibs/*/libfreeturn.so является валидным ELF-бинарником"
     group = "verification"
+    mustRunAfter(fetchFreeturnCore)
     jniLibsDir.set(layout.projectDirectory.dir("src/main/jniLibs"))
 }
 
