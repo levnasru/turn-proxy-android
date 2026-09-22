@@ -148,4 +148,32 @@ class CoreArgsTest {
         assertEquals("tcp", adapted[modeIdx + 1])
         assertTrue(adapted.contains("-bond"))
     }
+
+    @Test
+    fun clientId_withDeviceSuffix_appendsSuffixWhenMissing() {
+        val cfg = ClientConfig(clientId = "testuser123")
+        val args = CoreArgs.client(cfg, ServerOpts(), ownClientId = "abcdef12345678")
+        val idx = args.indexOf("-client-id")
+        assertTrue(idx >= 0)
+        assertEquals("testuser123#abcdef12", args[idx + 1])
+    }
+
+    @Test
+    fun clientId_alreadySuffixed_preservesExistingSuffix() {
+        val cfg = ClientConfig(clientId = "testuser123#custom-device")
+        val args = CoreArgs.client(cfg, ServerOpts(), ownClientId = "abcdef12345678")
+        val idx = args.indexOf("-client-id")
+        assertTrue(idx >= 0)
+        assertEquals("testuser123#custom-device", args[idx + 1])
+    }
+
+    @Test
+    fun clientId_blank_usesOwnClientId() {
+        val cfg = ClientConfig(clientId = "")
+        val args = CoreArgs.client(cfg, ServerOpts(), ownClientId = "abcdef12345678")
+        val idx = args.indexOf("-client-id")
+        assertTrue(idx >= 0)
+        assertEquals("abcdef12345678", args[idx + 1])
+    }
 }
+

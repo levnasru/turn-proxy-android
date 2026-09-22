@@ -8,6 +8,9 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.freeturn.app.R
@@ -32,6 +35,10 @@ class ProxyNotifier(private val service: Service) {
             PendingIntent.getActivity(service, 0, it, PendingIntent.FLAG_IMMUTABLE)
         }
     }
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var pendingRefresh = false
+    private var lastRefreshMs = 0L
 
     private var baseStatus = ""
     private var speedText = ""
@@ -61,6 +68,8 @@ class ProxyNotifier(private val service: Service) {
     fun prepareConnecting() {
         baseStatus = service.getString(R.string.notif_proxy_connecting)
         isActive = false
+        pendingRefresh = false
+        handler.removeCallbacksAndMessages(null)
     }
 
     /** [active] - соединение установлено (прокси или прокси+WG): показываем потоки и скорость. */
@@ -75,9 +84,25 @@ class ProxyNotifier(private val service: Service) {
         if (isActive) show()
     }
 
-    /** Перерисовать (обновился счётчик потоков) - только если статус активен. */
+    /** Перерисовать (обновился счётчик потоков) - только если статус активен, с дебаунсом 300мс. */
     fun refreshStats() {
-        if (isActive) show()
+        if (!isActive) return
+        val now = SystemClock.elapsedRealtime()
+        val diff = now - lastRefreshMs
+        if (diff >= 300L) {
+            lastRefreshMs = now
+            pendingRefresh = false
+            show()
+        } else if (!pendingRefresh) {
+            pendingRefresh = true
+            handler.postDelayed({
+                if (pendingRefresh && isActive) {
+                    lastRefreshMs = SystemClock.elapsedRealtime()
+                    pendingRefresh = false
+                    show()
+                }
+            }, 300L - diff)
+        }
     }
 
     fun build(): Notification {
@@ -122,7 +147,7 @@ class ProxyNotifier(private val service: Service) {
     private fun show() {
         try {
             NotificationManagerCompat.from(service).notify(NOTIF_ID_FG, build())
-        } catch (_: SecurityException) {}
+        } catch (_: Exception) {}
     }
 
     /** Показ алерта капчи. Дедуп: пока предыдущий не закрыт - повторно не шумим. */
@@ -140,14 +165,16 @@ class ProxyNotifier(private val service: Service) {
             .build()
         try {
             NotificationManagerCompat.from(service).notify(NOTIF_ID_CAPTCHA, notification)
-        } catch (_: SecurityException) {
-            // POST_NOTIFICATIONS отозван на API 33+ - молча игнорируем, диалог в UI
+        } catch (_: Exception) {
+            // POST_NOTIFICATIONS отозван на API 33+ или RemoteServiceException - молча игнорируем, диалог в UI
             // всё равно откроется через captchaSession StateFlow.
         }
     }
 
     fun cancelCaptcha() {
-        NotificationManagerCompat.from(service).cancel(NOTIF_ID_CAPTCHA)
+        try {
+            NotificationManagerCompat.from(service).cancel(NOTIF_ID_CAPTCHA)
+        } catch (_: Exception) {}
         captchaActive = false
     }
 }

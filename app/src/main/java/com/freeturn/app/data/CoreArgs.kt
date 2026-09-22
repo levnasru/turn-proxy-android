@@ -79,7 +79,13 @@ CoreArgs {
         if (cfg.magicSwitch) {
             cfg.magicTurn.trim().takeIf { it.isNotEmpty() }?.let { add("-turn"); add(it) }
         }
-        val clientId = cfg.clientId.ifBlank { ownClientId.orEmpty() }
+        val deviceSuffix = ownClientId?.take(8).orEmpty()
+        val clientId = when {
+            cfg.clientId.isNotBlank() && deviceSuffix.isNotBlank() && !cfg.clientId.contains("#") && !cfg.clientId.contains("@") && !cfg.clientId.contains("/") ->
+                "${cfg.clientId}#$deviceSuffix"
+            cfg.clientId.isNotBlank() -> cfg.clientId
+            else -> ownClientId.orEmpty()
+        }
         if (clientId.isNotBlank()) { add("-client-id"); add(clientId) }
         if (!protectPath.isNullOrBlank()) { add("-protect-path"); add(protectPath) }
     }

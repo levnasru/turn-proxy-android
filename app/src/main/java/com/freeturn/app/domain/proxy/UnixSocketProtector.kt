@@ -132,16 +132,28 @@ class UnixSocketProtector(private val context: Context) {
             val bytesRead = input.read(buffer)
             if (bytesRead > 0) {
                 val fds = socket.ancillaryFileDescriptors
-                if (fds != null && fds.isNotEmpty()) {
-                    val fd = fds[0]
-                    val vpn = getActiveVpnService()
-                    if (vpn != null) {
-                        val pfd = ParcelFileDescriptor.dup(fd)
-                        val success = vpn.protect(pfd.fd)
-                        Log.i("UnixSocketProtector", "Protected fd ${pfd.fd}: $success")
-                        pfd.close()
-                    } else {
-                        Log.w("UnixSocketProtector", "No active VpnService found")
+                if (!fds.isNullOrEmpty()) {
+                    for (fd in fds) {
+                        try {
+                            val vpn = getActiveVpnService()
+                            if (vpn != null) {
+                                val pfd = ParcelFileDescriptor.dup(fd)
+                                try {
+                                    val success = vpn.protect(pfd.fd)
+                                    Log.i("UnixSocketProtector", "Protected fd ${pfd.fd}: $success")
+                                } finally {
+                                    try { pfd.close() } catch (_: Exception) {}
+                                }
+                            } else {
+                                Log.w("UnixSocketProtector", "No active VpnService found")
+                            }
+                        } finally {
+                            try {
+                                Os.close(fd)
+                            } catch (e: Exception) {
+                                Log.w("UnixSocketProtector", "Failed to close ancillary fd", e)
+                            }
+                        }
                     }
                 } else {
                     Log.w("UnixSocketProtector", "No ancillary FDs received")
@@ -153,7 +165,7 @@ class UnixSocketProtector(private val context: Context) {
         } catch (e: Exception) {
             Log.e("UnixSocketProtector", "Error handling socket", e)
         } finally {
-            try { socket.close() } catch (e: Exception) {}
+            try { socket.close() } catch (_: Exception) {}
         }
     }
 
