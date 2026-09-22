@@ -132,9 +132,9 @@ class UnixSocketProtector(private val context: Context) {
             val bytesRead = input.read(buffer)
             val fds = socket.ancillaryFileDescriptors
             if (!fds.isNullOrEmpty()) {
+                val vpn = getActiveVpnService()
                 for (fd in fds) {
                     try {
-                        val vpn = getActiveVpnService()
                         if (vpn != null) {
                             val pfd = ParcelFileDescriptor.dup(fd)
                             try {
@@ -144,7 +144,7 @@ class UnixSocketProtector(private val context: Context) {
                                 try { pfd.close() } catch (_: Exception) {}
                             }
                         } else {
-                            Log.w("UnixSocketProtector", "No active VpnService found")
+                            Log.w("UnixSocketProtector", "No active VpnService found (bootstrap phase, physical route)")
                         }
                     } finally {
                         try {
@@ -170,6 +170,8 @@ class UnixSocketProtector(private val context: Context) {
     }
 
     private fun getActiveVpnService(): VpnService? {
+        VpnServiceHolder.get()?.let { return it }
+
         try {
             val activityThreadClass = Class.forName("android.app.ActivityThread")
             val currentActivityThreadMethod = activityThreadClass.getDeclaredMethod("currentActivityThread")
@@ -182,11 +184,12 @@ class UnixSocketProtector(private val context: Context) {
             
             for (service in mServices.values) {
                 if (service is VpnService) {
+                    VpnServiceHolder.register(service)
                     return service
                 }
             }
         } catch (e: Exception) {
-            Log.e("UnixSocketProtector", "Failed to get VpnService", e)
+            Log.e("UnixSocketProtector", "Failed to get VpnService via reflection", e)
         }
         return null
     }

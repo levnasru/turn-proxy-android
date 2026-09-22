@@ -23,6 +23,7 @@ import com.freeturn.app.data.config.ClientConfig
 import com.freeturn.app.domain.ConnectionStats
 import com.freeturn.app.domain.StartupResult
 import com.freeturn.app.domain.proxy.PRIVATE_IPV4_CIDRS
+import com.freeturn.app.domain.proxy.VpnServiceHolder
 import com.freeturn.app.domain.proxy.excludeLanFromAllowedIps
 import com.freeturn.app.service.reality.RealityIpc
 import com.freeturn.app.service.reality.RealityState
@@ -115,6 +116,7 @@ class RealityVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+        VpnServiceHolder.register(this)
         serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         notifier = ProxyNotifier(this)
         notifier.createChannels()
@@ -191,11 +193,13 @@ class RealityVpnService : VpnService() {
     }
 
     private suspend fun startXray(xrayConfigOverride: String?, bypassRulesOverride: String? = null) {
+        tornDown.set(false)
         val rawJson = xrayConfigOverride ?: prefs.clientConfigFlow.first().xrayConfig
         if (rawJson.isBlank()) {
             fail("Xray-конфиг не задан")
             return
         }
+        if (tornDown.get()) return
         val rawBypass = bypassRulesOverride ?: prefs.clientConfigFlow.first().bypassRules
         val parsedBypass = parseBypassRules(rawBypass)
 
@@ -245,7 +249,12 @@ class RealityVpnService : VpnService() {
         val pfd = try {
             builder.establish() ?: throw IllegalStateException("establish() вернул null")
         } catch (e: Exception) {
+            if (tornDown.get()) return
             fail("TUN establish() упал: ${e.message}")
+            return
+        }
+        if (tornDown.get()) {
+            runCatching { pfd.close() }
             return
         }
         tunFd = pfd
@@ -319,10 +328,22 @@ class RealityVpnService : VpnService() {
         val root = JSONObject(rawJson)
 
         val inbounds = root.optJSONArray("inbounds") ?: org.json.JSONArray().also { root.put("inbounds", it) }
-        val hasTunInbound = (0 until inbounds.length()).any {
-            inbounds.optJSONObject(it)?.optString("protocol") == "tun"
+        var foundTun = false
+        for (i in 0 until inbounds.length()) {
+            val inbound = inbounds.optJSONObject(i) ?: continue
+            if (inbound.optString("protocol") == "tun") {
+                foundTun = true
+                val settings = inbound.optJSONObject("settings") ?: JSONObject().also { inbound.put("settings", it) }
+                if (!settings.has("mtu") || settings.optInt("mtu") <= 0) {
+                    settings.put("mtu", mtu)
+                }
+                if (settings.optString("name").isBlank()) {
+                    settings.put("name", "tun0")
+                }
+                break
+            }
         }
-        if (!hasTunInbound) {
+        if (!foundTun) {
             inbounds.put(
                 JSONObject().apply {
                     put("port", 0)
@@ -503,6 +524,7 @@ class RealityVpnService : VpnService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        VpnServiceHolder.unregister(this)
         teardownTunnel()
         serviceScope.cancel()
     }

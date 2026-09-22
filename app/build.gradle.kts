@@ -353,6 +353,43 @@ if (coreFetchHook != null) {
     tasks.matching { it.name == coreFetchHook }.configureEach { dependsOn(fetchFreeturnCore) }
 }
 
+abstract class VerifyFreeturnCoreElf : DefaultTask() {
+    @get:InputDirectory
+    abstract val jniLibsDir: DirectoryProperty
+
+    @TaskAction
+    fun verify() {
+        val root = jniLibsDir.get().asFile
+        val abis = listOf("arm64-v8a", "armeabi-v7a")
+        for (abi in abis) {
+            val file = File(root, "$abi/libfreeturn.so")
+            if (!file.isFile) {
+                logger.warn("VerifyFreeturnCoreElf: $file does not exist (skipping $abi)")
+                continue
+            }
+            if (file.length() < 4) {
+                throw GradleException("VerifyFreeturnCoreElf: $file is corrupted or too small (${file.length()} bytes)")
+            }
+            val header = ByteArray(4)
+            file.inputStream().use { it.read(header) }
+            if (header[0] != 0x7F.toByte() || header[1] != 'E'.code.toByte() || header[2] != 'L'.code.toByte() || header[3] != 'F'.code.toByte()) {
+                throw GradleException("VerifyFreeturnCoreElf: $file is NOT a valid ELF binary! Magic bytes: ${header.joinToString { "%02X".format(it) }}. Did you mistakenly package an archive?")
+            }
+            logger.lifecycle("VerifyFreeturnCoreElf: verified valid ELF executable for $abi (${file.length()} bytes)")
+        }
+    }
+}
+
+val verifyFreeturnCoreElf = tasks.register<VerifyFreeturnCoreElf>("verifyFreeturnCoreElf") {
+    description = "Проверяет что jniLibs/*/libfreeturn.so является валидным ELF-бинарником"
+    group = "verification"
+    jniLibsDir.set(layout.projectDirectory.dir("src/main/jniLibs"))
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn(verifyFreeturnCoreElf)
+}
+
 /**
  * Тянет libXray.aar (XTLS/libXray, gomobile bind над xray-core) из релизов
  * xtls/libXray. Нужен для Reality-транспорта (RealityVpnService) - без него

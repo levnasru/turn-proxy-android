@@ -15,6 +15,7 @@ import com.freeturn.app.data.config.VkTurnXrayConfigBuilder
 import com.freeturn.app.data.config.parseBypassRules
 import com.freeturn.app.domain.CaptchaSession
 import com.freeturn.app.domain.ConnectionStats
+import com.freeturn.app.domain.proxy.CommandLineTokenizer
 import com.freeturn.app.domain.proxy.CoreConnectionTracker
 import com.freeturn.app.domain.proxy.CoreLogEvent
 import com.freeturn.app.domain.proxy.CoreLogParser
@@ -296,9 +297,9 @@ class CoreProcessController(
         val cmdArgs = mutableListOf<String>()
 
         if (cfg.isRawMode) {
-            val parts = cfg.rawCommand.trim().split("\\s+".toRegex()).filter { it.isNotEmpty() }
+            val parts = CommandLineTokenizer.tokenize(cfg.rawCommand)
             cmdArgs.add(executable)
-            val rawArgs = parts.drop(1)
+            val rawArgs = if (parts.isNotEmpty() && !parts[0].startsWith("-")) parts.drop(1) else parts
             val effectiveArgs = if (cfg.tunnelTransport == TunnelTransport.VK_XRAY) {
                 CoreArgs.adaptRawArgsForVkXray(rawArgs)
             } else {
@@ -318,7 +319,7 @@ class CoreProcessController(
         var captchaSessionCounter = 0L
 
         val rawN = if (cfg.isRawMode) {
-            val parts = cfg.rawCommand.trim().split("\\s+".toRegex())
+            val parts = CommandLineTokenizer.tokenize(cfg.rawCommand)
             val idx = parts.indexOf("-n")
             if (idx >= 0 && idx + 1 < parts.size) parts[idx + 1].toIntOrNull() else null
         } else null
