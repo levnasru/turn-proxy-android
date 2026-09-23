@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.4] (2026-09-23)
+
+### Bug Fixes
+
+* **subscription:** automatically rewrite both old VPS IP and raw new VPS IP with `panelproxy.levnas.ru:2096` for valid Let's Encrypt TLS/SNI certificate verification.
+* **tests:** update test fixtures to use `panelproxy.levnas.ru`.
+
 ## [3.8.3] (2026-09-22)
 
 ### Features

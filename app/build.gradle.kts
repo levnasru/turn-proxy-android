@@ -25,7 +25,7 @@ android {
         // WireGuard GoBackend (com.wireguard.android:tunnel) требует minSdk 24.
         minSdk = 24
         targetSdk = 37
-        versionName = "LFT-3.8.3" // x-release-please-version
+        versionName = "LFT-3.8.4" // x-release-please-version
         // Производный от versionName (M*10000+m*100+p) - release-please бампит только строку версии.
         // filter/takeWhile digits: форк добавляет нечисловые префикс ("LFT-") и суффикс ("-beta").
         versionCode = versionName!!.split(".").let { (ma, mi, pa) ->

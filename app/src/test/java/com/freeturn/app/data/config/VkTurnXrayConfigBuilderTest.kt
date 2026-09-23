@@ -58,7 +58,7 @@ class VkTurnXrayConfigBuilderTest {
     @Test
     fun `coreArgs client rewrites port to 56003 and enables tcp bond when VK_XRAY`() {
         val cfg = ClientConfig(
-            serverAddress = "89.124.71.77:56002",
+            serverAddress = "panelproxy.levnas.ru:56002",
             tunnelTransport = TunnelTransport.VK_XRAY,
             localPort = "127.0.0.1:9000"
         )
@@ -67,7 +67,7 @@ class VkTurnXrayConfigBuilderTest {
 
         val peerIdx = args.indexOf("-peer")
         assertTrue(peerIdx >= 0)
-        assertEquals("89.124.71.77:56003", args[peerIdx + 1])
+        assertEquals("panelproxy.levnas.ru:56003", args[peerIdx + 1])
 
         val modeIdx = args.indexOf("-mode")
         assertTrue(modeIdx >= 0)

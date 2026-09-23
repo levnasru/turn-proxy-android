@@ -14,9 +14,9 @@ class CoreArgsTest {
     @Test
     fun vkXray_singleProvider_clampsThreadsTo20AndRewritesPort() {
         val cfg = ClientConfig(
-            serverAddress = "89.124.71.77:56005",
+            serverAddress = "panelproxy.levnas.ru:56005",
             provider = Provider.HUB,
-            hubUrl = "https://89.124.71.77:8445/turn-creds",
+            hubUrl = "https://panelproxy.levnas.ru:8445/turn-creds",
             threads = 50,
             useUdp = true,
             tunnelTransport = TunnelTransport.VK_XRAY
@@ -25,7 +25,7 @@ class CoreArgsTest {
 
         val peerIdx = args.indexOf("-peer")
         assertTrue(peerIdx >= 0)
-        assertEquals("89.124.71.77:56003", args[peerIdx + 1])
+        assertEquals("panelproxy.levnas.ru:56003", args[peerIdx + 1])
 
         val nIdx = args.indexOf("-n")
         assertTrue(nIdx >= 0)
@@ -43,9 +43,9 @@ class CoreArgsTest {
     @Test
     fun vkXray_multiProvider_clampsThreadsPerProviderSoTotalIsAtMost20() {
         val cfg = ClientConfig(
-            serverAddress = "89.124.71.77:56005",
+            serverAddress = "panelproxy.levnas.ru:56005",
             provider = Provider.HUB,
-            hubUrl = "https://89.124.71.77:8445/turn-creds,https://89.124.71.77:8446/turn-creds,https://89.124.71.77:8448/turn-creds,https://89.124.71.77:8447/turn-creds",
+            hubUrl = "https://panelproxy.levnas.ru:8445/turn-creds,https://panelproxy.levnas.ru:8446/turn-creds,https://panelproxy.levnas.ru:8448/turn-creds,https://panelproxy.levnas.ru:8447/turn-creds",
             threads = 80,
             tunnelTransport = TunnelTransport.VK_XRAY
         )
@@ -60,9 +60,9 @@ class CoreArgsTest {
     @Test
     fun wireguard_multiProvider_dividesThreadsPerProviderSoTotalMatchesConfig() {
         val cfg = ClientConfig(
-            serverAddress = "89.124.71.77:56005",
+            serverAddress = "panelproxy.levnas.ru:56005",
             provider = Provider.HUB,
-            hubUrl = "https://89.124.71.77:8445/turn-creds,https://89.124.71.77:8446/turn-creds",
+            hubUrl = "https://panelproxy.levnas.ru:8445/turn-creds,https://panelproxy.levnas.ru:8446/turn-creds",
             threads = 80,
             useUdp = true,
             tunnelTransport = TunnelTransport.WIREGUARD
@@ -71,7 +71,7 @@ class CoreArgsTest {
 
         val peerIdx = args.indexOf("-peer")
         assertTrue(peerIdx >= 0)
-        assertEquals("89.124.71.77:56005", args[peerIdx + 1])
+        assertEquals("panelproxy.levnas.ru:56005", args[peerIdx + 1])
 
         val nIdx = args.indexOf("-n")
         assertTrue(nIdx >= 0)
@@ -87,9 +87,9 @@ class CoreArgsTest {
     @Test
     fun wireguard_singleProvider_usesFullThreads() {
         val cfg = ClientConfig(
-            serverAddress = "89.124.71.77:56005",
+            serverAddress = "panelproxy.levnas.ru:56005",
             provider = Provider.HUB,
-            hubUrl = "https://89.124.71.77:8445/turn-creds",
+            hubUrl = "https://panelproxy.levnas.ru:8445/turn-creds",
             threads = 80,
             useUdp = true,
             tunnelTransport = TunnelTransport.WIREGUARD
@@ -104,9 +104,9 @@ class CoreArgsTest {
     @Test
     fun wireguard_fourProviders_dividesTo20Each() {
         val cfg = ClientConfig(
-            serverAddress = "89.124.71.77:56005",
+            serverAddress = "panelproxy.levnas.ru:56005",
             provider = Provider.HUB,
-            hubUrl = "https://89.124.71.77:8445/turn-creds,https://89.124.71.77:8446/turn-creds,https://89.124.71.77:8447/turn-creds,https://89.124.71.77:8448/turn-creds",
+            hubUrl = "https://panelproxy.levnas.ru:8445/turn-creds,https://panelproxy.levnas.ru:8446/turn-creds,https://panelproxy.levnas.ru:8447/turn-creds,https://panelproxy.levnas.ru:8448/turn-creds",
             threads = 80,
             useUdp = true,
             tunnelTransport = TunnelTransport.WIREGUARD
@@ -122,8 +122,8 @@ class CoreArgsTest {
     fun adaptRawArgsForVkXray_mutatesFlagsCorrectly() {
         val raw = listOf(
             "-provider", "hub",
-            "-hub-url", "https://89.124.71.77:8445/turn-creds,https://89.124.71.77:8446/turn-creds,https://89.124.71.77:8448/turn-creds,https://89.124.71.77:8447/turn-creds",
-            "-peer", "89.124.71.77:56005",
+            "-hub-url", "https://panelproxy.levnas.ru:8445/turn-creds,https://panelproxy.levnas.ru:8446/turn-creds,https://panelproxy.levnas.ru:8448/turn-creds,https://panelproxy.levnas.ru:8447/turn-creds",
+            "-peer", "panelproxy.levnas.ru:56005",
             "-transport", "udp",
             "-batch", "8",
             "-n", "80",
@@ -134,7 +134,7 @@ class CoreArgsTest {
 
         val peerIdx = adapted.indexOf("-peer")
         assertTrue(peerIdx >= 0)
-        assertEquals("89.124.71.77:56003", adapted[peerIdx + 1])
+        assertEquals("panelproxy.levnas.ru:56003", adapted[peerIdx + 1])
 
         val nIdx = adapted.indexOf("-n")
         assertTrue(nIdx >= 0)

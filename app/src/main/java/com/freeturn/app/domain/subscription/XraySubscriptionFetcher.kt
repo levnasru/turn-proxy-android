@@ -28,10 +28,10 @@ class XraySubscriptionFetcher {
     private fun fetchBody(url: String): String {
         // Поддомен с валидным Let's Encrypt сертификатом для x-ui панели на порту :2096.
         // Запрос по голому IP даёт SSLHandshakeException (no alternative certificate subject name).
-        val targetUrl = if (url.contains("89.124.71.77:2096")) {
-            url.replace("89.124.71.77:2096", "panelproxy.levnas.ru:2096")
-        } else {
-            url
+        val targetUrl = when {
+            url.contains("89.124.71.77:2096") -> url.replace("89.124.71.77:2096", "panelproxy.levnas.ru:2096")
+            url.contains("46.151.24.21:2096") -> url.replace("46.151.24.21:2096", "panelproxy.levnas.ru:2096")
+            else -> url
         }
         val connection = URL(targetUrl).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
